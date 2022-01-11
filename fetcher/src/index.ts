@@ -1,9 +1,7 @@
 import https from 'https'
 import fs from 'fs'
 import path from 'path'
-import { waitForDebugger } from 'inspector'
 
-console.log('test1')
 
 /* financial
 
@@ -19,8 +17,8 @@ https://query1.finance.yahoo.com/v8/finance/chart/SEK=X?region=US&lang=en-US&inc
 
 
 */
-//const stocks = ['AZN.ST', 'ESSITY.ST', 'APPL', 'ERIC-B.ST', 'MSFT', 'PFE', 'AMBK', 'HEXA-B.ST', 'TSLA', 'AMZN', 'T']
-const stocks = ['AZN.ST', 'AAPL', 'MSFT']
+const stocks = ['AZN.ST', 'ESSITY-B.ST', 'APPL', 'ERIC-B.ST', 'MSFT', 'PFE', 'AMBK', 'HEXA-B.ST', 'TSLA', 'AMZN', 'T', 'MRK', 'DDAIF', 'AIR.F', 'GOOGL', 'INTC']
+
 const exchanges = [{
   name: 'USD-SEK',
   id: 'SEK=X'
@@ -64,7 +62,7 @@ const fetch = (path: string) => {
 
 function extractData(input:any) {
   console.log('extract')
-  console.log(input)
+
   const result = JSON.parse(input as string)
   const timestamps = result.chart.result[0].timestamp
   const opens = result.chart.result[0].indicators.quote[0].open
@@ -73,6 +71,10 @@ function extractData(input:any) {
   const lows = result.chart.result[0].indicators.quote[0].low
   const volumes = result.chart.result[0].indicators.quote[0].volume
   const meta = result.chart.result[0].meta
+
+  if (!timestamps) {
+    return undefined
+  }
 
   console.log(timestamps.length, opens.length, highs.length, volumes.length)
   const data = timestamps.map((timestamp: string,idx: number) => {
@@ -94,25 +96,28 @@ function mkdir(dir:string) {
 }
 
 function deleteAllFiles(dir:string) {
-  fs.readdir(dir, (err, files) => {
-    if (err) throw err;
-  
-    for (const file of files) {
-      fs.unlink(path.join(dir, file), err => {
-        if (err) throw err;
-      })
-    }
+  return new Promise(resolve => {
+    fs.readdir(dir, (err, files) => {
+      if (err) throw err;
+    
+      for (const file of files) {
+        fs.unlink(path.join(dir, file), err => {
+          if (err) throw err;
+        })
+      }
+    })
   })
+
 }
 
-function saveData(result:any) {
+async function saveData(result:any) {
   const stockName = result.meta.symbol
   
   var dir = `../data/${stockName}`
 
   mkdir(dir)
-  deleteAllFiles(dir)
 
+  console.log(`Saving Security: ${stockName}`)
   fs.writeFileSync(`${dir}/data`, JSON.stringify(result.data))
   fs.writeFileSync(`${dir}/meta`, JSON.stringify(result.meta))
 }
@@ -122,9 +127,8 @@ function saveExchange(result:any) {
   const name = exchanges.find(e => e.id === id)!.name
   
   var dir = `../exchange/${name}`
-
+  console.log(`Saving Exchange: ${name}`)
   mkdir(dir)
-  deleteAllFiles(dir)
 
   fs.writeFileSync(`${dir}/data`, JSON.stringify(result.data))
   fs.writeFileSync(`${dir}/meta`, JSON.stringify(result.meta))
@@ -135,21 +139,21 @@ function saveExchange(result:any) {
     return results.map(extractData)
   }).then(results => {
     results.forEach(result => {
-      saveData(result)
+      if (result) {
+        saveData(result)
+      }
     })
-  }).then(() => Promise.all(
+    return
+  }).then(async () => await Promise.all(
     exchanges.map(exchange => {
       const {id} = exchange
       return fetchData(id)
     })
   )).then(results => {
     return results.map(extractData)
-  }).then(results => {
+  }).then(async results => {
     results.forEach(result => {
       saveExchange(result)
     })
   })
 })()
-
-
-
