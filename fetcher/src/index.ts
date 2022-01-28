@@ -15,9 +15,14 @@ https://query1.finance.yahoo.com/v8/finance/chart/AAPL?region=US&lang=en-US&incl
 SEK-USD
 https://query1.finance.yahoo.com/v8/finance/chart/SEK=X?region=US&lang=en-US&includePrePost=false&interval=1d&useYfid=true&range=5y&corsDomain=finance.yahoo.com&.tsrc=finance
 
+upgrades:
 
+https://finance.yahoo.com/quote/AAPL?p=AAPL
+get 'root.App.main' =  {}
+context.dispatcher.stores.PageStore.upgradeDowngradeHistory.history
 */
-const stocks = ['AZN.ST', 'ESSITY-B.ST', 'APPL', 'ERIC-B.ST', 'MSFT', 'PFE', 'AMBK', 'HEXA-B.ST', 'TSLA', 'AMZN', 'T', 'MRK', 'DDAIF', 'AIR.F', 'GOOGL', 'INTC']
+
+const stocks = ['AZN.ST', 'ESSITY-B.ST', 'AAPL', 'ERIC-B.ST', 'MSFT', 'PFE', 'AMBK', 'HEXA-B.ST', 'TSLA', 'AMZN', 'T', 'MRK', 'DDAIF', 'AIR.F', 'GOOGL', 'INTC', 'NVDA', 'DIS', 'RHHBY', 'NSRGY', 'TSM']
 
 const exchanges = [{
   name: 'USD-SEK',
@@ -28,14 +33,14 @@ const exchanges = [{
 }]
 
 const fetchData = (name: string) => {
-  const path = `/v8/finance/chart/${name}?region=US&lang=en-US&includePrePost=false&interval=1d&useYfid=true&range=5y&corsDomain=finance.yahoo.com&.tsrc=finance`
-  return fetch(path)
+  const path = `/v8/finance/chart/${name}?region=US&lang=en-US&includePrePost=false&interval=1d&useYfid=true&range=10y&corsDomain=finance.yahoo.com&.tsrc=finance`
+  return fetch(path, 'query1.finance.yahoo.com')
 }
 
-const fetch = (path: string) => {
+const fetch = (path: string, hostname: string): Promise<string> => {
   return new Promise((resolve, reject) => {
     const options = {
-      hostname: 'query1.finance.yahoo.com',
+      hostname,
       port: 443,
       path,
       method: 'GET'
@@ -107,7 +112,13 @@ function deleteAllFiles(dir:string) {
       }
     })
   })
+}
 
+async function saveUpDownGrade(result: any, name: string) {
+  let dir = `../data/${name}`
+  mkdir(dir)
+  console.log(`Saving Updown grade data: ${name}`)
+  fs.writeFileSync(`${dir}/updown`, JSON.stringify(result))
 }
 
 async function saveData(result:any) {
@@ -134,6 +145,32 @@ function saveExchange(result:any) {
   fs.writeFileSync(`${dir}/meta`, JSON.stringify(result.meta))
 }
 
+function fetchUpDownGrade(name: string) {
+  const path = `/quote/${name}?p=${name}`
+  const hostname = 'finance.yahoo.com'
+  return fetch(path, hostname)
+}
+
+function extractUpDownGrade(result: string) {
+  const index = result.indexOf('root.App.main')
+  const endIndex = result.indexOf('\n', index+1)
+
+  if (index === -1) return undefined
+  console.log(result.substring(index, endIndex))
+  const line = result.substring(index, endIndex)
+  const re = /^root.App.main = (.*);$/
+
+  const obj = JSON.parse(line.match(re)![1])
+
+  return obj.context.dispatcher.stores.QuoteSummaryStore.upgradeDowngradeHistory?.history
+}
+
+// fetchUpDownGrade('AAPL').then(extractUpDownGrade).then(async result => {
+//   console.log(result)
+//   result && await saveUpDownGrade(result, 'AAPL')
+//   console.log('Done.')
+// })
+
 (async () => {
   await Promise.all(stocks.map(fetchData)).then(results => {
     return results.map(extractData)
@@ -141,6 +178,17 @@ function saveExchange(result:any) {
     results.forEach(result => {
       if (result) {
         saveData(result)
+      }
+    })
+    return
+  }).then(async () => await Promise.all(
+    stocks.map(fetchUpDownGrade)
+  )).then((results: string[]) => {
+    return results.map((result:string) => extractUpDownGrade(result))
+  }).then(results => {
+    results.forEach((result,idx) => {
+      if (result) {
+        saveUpDownGrade(result, stocks[idx])
       }
     })
     return
