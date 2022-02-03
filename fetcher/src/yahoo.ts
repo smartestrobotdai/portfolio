@@ -11,7 +11,9 @@ export function saveAllData(results: any[]) {
 
 export async function saveData(result:any) {
   const stockName = result.meta.symbol
-  var dir = `../data/stocks/${stockName}`
+  const isIndicator = stockName[0] === '^' || stockName.includes('=')
+  const type = isIndicator ? 'indicators' : 'stocks'
+  let dir = `../data/${type}/${stockName}`
   mkdir(dir)
   console.log(`Saving Security: ${stockName}`)
   fs.writeFileSync(`${dir}/data`, JSON.stringify(result.data))
@@ -74,7 +76,6 @@ export function extractData(input:any) {
     return undefined
   }
 
-  console.log(timestamps.length, opens.length, highs.length, volumes.length)
   const data = timestamps.map((timestamp: string,idx: number) => {
     const open = opens[idx]
     const high = highs[idx]

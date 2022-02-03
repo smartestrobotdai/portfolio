@@ -25,7 +25,7 @@ context.dispatcher.stores.PageStore.upgradeDowngradeHistory.history
 */
 
 const stocks = ['AZN.ST', 'ESSITY-B.ST', 'AAPL', 'ERIC-B.ST', 'MSFT', 'PFE', 'AMBK', 'HEXA-B.ST', 'TSLA', 'AMZN', 'T', 'MRK', 'DDAIF', 'AIR.F', 'GOOGL', 'INTC', 'NVDA', 'DIS', 'RHHBY', 'NSRGY', 'TSM']
-//const stocks = ['CL=F','ZB=F']
+const indicators = ['CL=F','ZB=F', '^DJI', '^OMX','SEK=X', 'EURSEK=X', 'EUR=X']
 //const stocks:string[] = []
 
 // const exchanges = [{
@@ -100,7 +100,7 @@ async function handleStocks(stocks: any[], maxConcurrentRequest:number) {
 
 
 (async () => {
-  await handleStocks(stocks, 3).then(() => {console.log('test')}).catch(err => console.log)
+  await handleStocks(stocks.concat(indicators), 3).then(() => {console.log('test')}).catch(err => console.log)
 })()
 
 // (async () => {
