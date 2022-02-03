@@ -1,14 +1,18 @@
 import { fetch, mkdir } from "./util"
 import fs from 'fs'
 
+export function saveAllData(results: any[]) {
+  results.forEach((result:any) => {
+    if (result) {
+      saveData(result)
+    }})
+}
+
 
 export async function saveData(result:any) {
   const stockName = result.meta.symbol
-  
-  var dir = `../data/${stockName}`
-
+  var dir = `../data/stocks/${stockName}`
   mkdir(dir)
-
   console.log(`Saving Security: ${stockName}`)
   fs.writeFileSync(`${dir}/data`, JSON.stringify(result.data))
   fs.writeFileSync(`${dir}/meta`, JSON.stringify(result.meta))
@@ -49,4 +53,36 @@ export function extractUpDownGrade(result: string) {
   const obj = JSON.parse(line.match(re)![1])
 
   return obj.context.dispatcher.stores.QuoteSummaryStore.upgradeDowngradeHistory?.history
+}
+
+export const fetchData = (name: string) => {
+  const path = `/v8/finance/chart/${name}?region=US&lang=en-US&includePrePost=false&interval=1d&useYfid=true&range=10y&corsDomain=finance.yahoo.com&.tsrc=finance`
+  return fetch(path, 'query1.finance.yahoo.com')
+}
+
+export function extractData(input:any) {
+  const result = JSON.parse(input as string)
+  const timestamps = result.chart.result[0].timestamp
+  const opens = result.chart.result[0].indicators.quote[0].open
+  const highs = result.chart.result[0].indicators.quote[0].high
+  const closes = result.chart.result[0].indicators.quote[0].close
+  const lows = result.chart.result[0].indicators.quote[0].low
+  const volumes = result.chart.result[0].indicators.quote[0].volume
+  const meta = result.chart.result[0].meta
+
+  if (!timestamps) {
+    return undefined
+  }
+
+  console.log(timestamps.length, opens.length, highs.length, volumes.length)
+  const data = timestamps.map((timestamp: string,idx: number) => {
+    const open = opens[idx]
+    const high = highs[idx]
+    const close = closes[idx]
+    const low = lows[idx]
+    const volumn = volumes[idx]
+    return {timestamp, open, high, low, close, volumn}
+  })
+  //console.log(data)
+  return {meta, data}
 }

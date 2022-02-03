@@ -1,8 +1,8 @@
 
-import fs from 'fs'
-import path from 'path'
+import { arrayBuffer } from 'stream/consumers'
 import { fetchSwedenTick, saveSweedenTick, TickSweden } from './sweden'
 import { fetch } from './util'
+import { extractData, extractUpDownGrade, fetchData, fetchUpDownGrade, saveAllData, saveData, saveExchange, saveUpDownGrade } from './yahoo'
 
 
 /* financial
@@ -24,9 +24,9 @@ get 'root.App.main' =  {}
 context.dispatcher.stores.PageStore.upgradeDowngradeHistory.history
 */
 
-//const stocks = ['AZN.ST', 'ESSITY-B.ST', 'AAPL', 'ERIC-B.ST', 'MSFT', 'PFE', 'AMBK', 'HEXA-B.ST', 'TSLA', 'AMZN', 'T', 'MRK', 'DDAIF', 'AIR.F', 'GOOGL', 'INTC', 'NVDA', 'DIS', 'RHHBY', 'NSRGY', 'TSM']
+const stocks = ['AZN.ST', 'ESSITY-B.ST', 'AAPL', 'ERIC-B.ST', 'MSFT', 'PFE', 'AMBK', 'HEXA-B.ST', 'TSLA', 'AMZN', 'T', 'MRK', 'DDAIF', 'AIR.F', 'GOOGL', 'INTC', 'NVDA', 'DIS', 'RHHBY', 'NSRGY', 'TSM']
 //const stocks = ['CL=F','ZB=F']
-const stocks:string[] = []
+//const stocks:string[] = []
 
 // const exchanges = [{
 //   name: 'USD-SEK',
@@ -45,7 +45,7 @@ interface Exchange {
 }
 const exchanges: Exchange[] = []
 
-const ticks: TickSweden[] = [
+const swedenTicks:any[] = [
   {
     name: 'm1',
     query: [{code:'Penningm', selection: {filter:'item', values:['5LLM1.1E.NEP.V.A']}}],
@@ -61,163 +61,76 @@ const ticks: TickSweden[] = [
     query: [],
     path: '/OV0104/v1/doris/en/ssd/PR/PR0101/PR0101A/KPItotM'
   }
-]
+];
 
-const fetchData = (name: string) => {
-  const path = `/v8/finance/chart/${name}?region=US&lang=en-US&includePrePost=false&interval=1d&useYfid=true&range=10y&corsDomain=finance.yahoo.com&.tsrc=finance`
-  return fetch(path, 'query1.finance.yahoo.com')
+
+async function handleStockBatch(stockChunkIt: Iterator<any[]>): Promise<any>{  
+  const {value, done} = stockChunkIt.next()
+  if (done) {return Promise.resolve()}
+  console.log('Downloading data for ', value)
+  return Promise.all(value.map(fetchData)).then(results => {
+    return results.map(extractData)
+  }).then((results:any) => {
+    console.log('Saving Data')
+    return saveAllData(results)
+  }).then(() => handleStockBatch(stockChunkIt))
 }
 
-function extractData(input:any) {
-  console.log('extract')
-
-  const result = JSON.parse(input as string)
-  const timestamps = result.chart.result[0].timestamp
-  const opens = result.chart.result[0].indicators.quote[0].open
-  const highs = result.chart.result[0].indicators.quote[0].high
-  const closes = result.chart.result[0].indicators.quote[0].close
-  const lows = result.chart.result[0].indicators.quote[0].low
-  const volumes = result.chart.result[0].indicators.quote[0].volume
-  const meta = result.chart.result[0].meta
-
-  if (!timestamps) {
-    return undefined
-  }
-
-  console.log(timestamps.length, opens.length, highs.length, volumes.length)
-  const data = timestamps.map((timestamp: string,idx: number) => {
-    const open = opens[idx]
-    const high = highs[idx]
-    const close = closes[idx]
-    const low = lows[idx]
-    const volumn = volumes[idx]
-    return {timestamp, open, high, low, close, volumn}
-  })
-  //console.log(data)
-  return {meta, data}
-}
-
-function mkdir(dir:string) {
-  if (!fs.existsSync(dir)){
-    fs.mkdirSync(dir)
+function *splitArrays(arr:any[], maxNumber:number) {
+  for (let pos = 0; pos < arr.length; pos += maxNumber) {
+    yield arr.slice(pos, pos + maxNumber)
   }
 }
 
-function deleteAllFiles(dir:string) {
-  return new Promise(resolve => {
-    fs.readdir(dir, (err, files) => {
-      if (err) throw err;
-    
-      for (const file of files) {
-        fs.unlink(path.join(dir, file), err => {
-          if (err) throw err;
-        })
-      }
-    })
-  })
-}
+async function handleStocks(stocks: any[], maxConcurrentRequest:number) {
+  const stockChunkIt = splitArrays(stocks, maxConcurrentRequest)
 
-async function saveUpDownGrade(result: any, name: string) {
-  let dir = `../data/${name}`
-  mkdir(dir)
-  console.log(`Saving Updown grade data: ${name}`)
-  fs.writeFileSync(`${dir}/updown`, JSON.stringify(result))
-}
+  // do {
+  //   const {value, done} = stocksChunks.next()
+  //   if (done) {
+  //     break
+  //   }
 
-async function saveData(result:any) {
-  const stockName = result.meta.symbol
+  //   console.log(value)
+  // } while(1)
   
-  var dir = `../data/${stockName}`
-
-  mkdir(dir)
-
-  console.log(`Saving Security: ${stockName}`)
-  fs.writeFileSync(`${dir}/data`, JSON.stringify(result.data))
-  fs.writeFileSync(`${dir}/meta`, JSON.stringify(result.meta))
+  // console.log(stocksChunks.next())
+  handleStockBatch(stockChunkIt)
 }
 
-function saveExchange(result:any) {
-  const id = result.meta.symbol
-  const name = exchanges.find(e => e.id === id)!.name
-  
-  var dir = `../exchange/${name}`
-  console.log(`Saving Exchange: ${name}`)
-  mkdir(dir)
-
-  fs.writeFileSync(`${dir}/data`, JSON.stringify(result.data))
-  fs.writeFileSync(`${dir}/meta`, JSON.stringify(result.meta))
-}
-
-async function saveM1M3(result:any) {
-  let dir = '../sweden/money'
-  console.log('Saving Sweden money supply')
-  mkdir(dir)
-  fs.writeFileSync(`${dir}/m1`, JSON.stringify(result.m1))
-  fs.writeFileSync(`${dir}/m3`, JSON.stringify(result.m3))
-}
-
-function fetchUpDownGrade(name: string) {
-  const path = `/quote/${name}?p=${name}`
-  const hostname = 'finance.yahoo.com'
-  return fetch(path, hostname)
-}
-
-function extractUpDownGrade(result: string) {
-  const index = result.indexOf('root.App.main')
-  const endIndex = result.indexOf('\n', index+1)
-
-  if (index === -1) return undefined
-  const line = result.substring(index, endIndex)
-  const re = /^root.App.main = (.*);$/
-
-  const obj = JSON.parse(line.match(re)![1])
-
-  return obj.context.dispatcher.stores.QuoteSummaryStore.upgradeDowngradeHistory?.history
-}
-
-// fetchUpDownGrade('AAPL').then(extractUpDownGrade).then(async result => {
-//   console.log(result)
-//   result && await saveUpDownGrade(result, 'AAPL')
-//   console.log('Done.')
-// })
 
 (async () => {
-  await Promise.all(stocks.map(fetchData)).then(results => {
-    return results.map(extractData)
-  }).then(results => {
-    results.forEach(result => {
-      if (result) {
-        saveData(result)
-      }
-    })
-    return
-  }).then(async () => await Promise.all(
-    stocks.map(fetchUpDownGrade)
-  )).then((results: string[]) => {
-    return results.map((result:string) => extractUpDownGrade(result))
-  }).then(results => {
-    results.forEach((result,idx) => {
-      if (result) {
-        saveUpDownGrade(result, stocks[idx])
-      }
-    })
-    return
-  }).then(async () => await Promise.all(
-    exchanges.map(exchange => {
-      const {id} = exchange
-      return fetchData(id)
-    })
-  )).then(results => {
-    return results.map(extractData)
-  }).then(async results => {
-    results.forEach(result => {
-      saveExchange(result)
-    })
-  }).then(async () => await Promise.all(
-    ticks.map(fetchSwedenTick)
-  )).then(results => {
-    results.forEach(result => {
-      saveSweedenTick(result)
-    })
-  }).catch(err => console.log)
+  await handleStocks(stocks, 3).then(() => {console.log('test')}).catch(err => console.log)
 })()
+
+// (async () => {
+//   handleStocks(stocks).then(async () => await Promise.all(
+//     stocks.map(fetchUpDownGrade)
+//   )).then((results: string[]) => {
+//     return results.map((result:string) => extractUpDownGrade(result))
+//   }).then(results => {
+//     results.forEach((result,idx) => {
+//       if (result) {
+//         saveUpDownGrade(result, stocks[idx])
+//       }
+//     })
+//     return
+//   }).then(async () => await Promise.all(
+//     exchanges.map(exchange => {
+//       const {id} = exchange
+//       return fetchData(id)
+//     })
+//   )).then(results => {
+//     return results.map(extractData)
+//   }).then(async results => {
+//     results.forEach((result, idx) => {
+//       saveExchange(exchanges[idx].name, result)
+//     })
+//   }).then(async () => await Promise.all(
+//     swedenTicks.map(fetchSwedenTick)
+//   )).then(results => {
+//     results.forEach((result:any) => {
+//       saveSweedenTick(result)
+//     })
+//   }).catch(err => console.log)
+// })()

@@ -43,7 +43,6 @@ export const post = (path: string, hostname: string, reqBody: any): Promise<stri
       }
       let body = ''
       const req = https.request(options, res => {
-        console.log(`statusCode: ${res.statusCode}`)
         res.on('data', d => {
           body += d.toString()
         })

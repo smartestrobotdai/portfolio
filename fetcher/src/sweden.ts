@@ -3,7 +3,7 @@ import { post } from "./util"
 //curl -X POST -d "{'query':[], 'response':{'format':'json'}}" http://api.scb.se/OV0104/v1/doris/en/ssd/FM/FM5001/FM5001A/FM5001SDDSPM
 export interface TickSweden {
     path: string
-    query: any
+    query: any[]
     name: string
   }
   
@@ -17,7 +17,6 @@ export interface TickSweden {
     console.log('fetch m1m3')
     return post(path, host, body).then(result => {
       const obj = JSON.parse(result)
-  
       return obj.data.reduce((results:any, cur:any) => {
         const month = cur.key[1].split('M').join('')
         const value = cur.values[0]
