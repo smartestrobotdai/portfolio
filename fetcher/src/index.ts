@@ -1,6 +1,8 @@
-import https from 'https'
+
 import fs from 'fs'
 import path from 'path'
+import { fetchSwedenTick, saveSweedenTick, TickSweden } from './sweden'
+import { fetch } from './util'
 
 
 /* financial
@@ -22,47 +24,48 @@ get 'root.App.main' =  {}
 context.dispatcher.stores.PageStore.upgradeDowngradeHistory.history
 */
 
-const stocks = ['AZN.ST', 'ESSITY-B.ST', 'AAPL', 'ERIC-B.ST', 'MSFT', 'PFE', 'AMBK', 'HEXA-B.ST', 'TSLA', 'AMZN', 'T', 'MRK', 'DDAIF', 'AIR.F', 'GOOGL', 'INTC', 'NVDA', 'DIS', 'RHHBY', 'NSRGY', 'TSM']
+//const stocks = ['AZN.ST', 'ESSITY-B.ST', 'AAPL', 'ERIC-B.ST', 'MSFT', 'PFE', 'AMBK', 'HEXA-B.ST', 'TSLA', 'AMZN', 'T', 'MRK', 'DDAIF', 'AIR.F', 'GOOGL', 'INTC', 'NVDA', 'DIS', 'RHHBY', 'NSRGY', 'TSM']
+//const stocks = ['CL=F','ZB=F']
+const stocks:string[] = []
 
-const exchanges = [{
-  name: 'USD-SEK',
-  id: 'SEK=X'
-}, {
-  name: 'EUR-SEK',
-  id: 'EURSEK=X'
-}]
+// const exchanges = [{
+//   name: 'USD-SEK',
+//   id: 'SEK=X'
+// }, {
+//   name: 'EUR-SEK',
+//   id: 'EURSEK=X'
+// }, {
+//   name: 'USD-EUR',
+//   id: 'EUR=X'
+// }]
+
+interface Exchange {
+  name: string
+  id: string
+}
+const exchanges: Exchange[] = []
+
+const ticks: TickSweden[] = [
+  {
+    name: 'm1',
+    query: [{code:'Penningm', selection: {filter:'item', values:['5LLM1.1E.NEP.V.A']}}],
+    path: '/FM/FM5001/FM5001A/FM5001SDDSPM'
+  },
+  {
+    name: 'm3',
+    query: [{code:'Penningm', selection: {filter:'item', values:['5LLM3a.1E.NEP.V.A']}}],
+    path: '/FM/FM5001/FM5001A/FM5001SDDSPM'
+  },
+  {
+    name: 'cpi',
+    query: [],
+    path: '/OV0104/v1/doris/en/ssd/PR/PR0101/PR0101A/KPItotM'
+  }
+]
 
 const fetchData = (name: string) => {
   const path = `/v8/finance/chart/${name}?region=US&lang=en-US&includePrePost=false&interval=1d&useYfid=true&range=10y&corsDomain=finance.yahoo.com&.tsrc=finance`
   return fetch(path, 'query1.finance.yahoo.com')
-}
-
-const fetch = (path: string, hostname: string): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname,
-      port: 443,
-      path,
-      method: 'GET'
-    }
-    let body = ''
-    const req = https.request(options, res => {
-      console.log(`statusCode: ${res.statusCode}`)
-      res.on('data', d => {
-        body += d.toString()
-      })
-
-      res.on('end', () => {
-        resolve(body)
-      })
-    })
-
-    req.on('error', error => {
-      reject(error)
-    })
-
-    req.end()
-  })
 }
 
 function extractData(input:any) {
@@ -145,6 +148,14 @@ function saveExchange(result:any) {
   fs.writeFileSync(`${dir}/meta`, JSON.stringify(result.meta))
 }
 
+async function saveM1M3(result:any) {
+  let dir = '../sweden/money'
+  console.log('Saving Sweden money supply')
+  mkdir(dir)
+  fs.writeFileSync(`${dir}/m1`, JSON.stringify(result.m1))
+  fs.writeFileSync(`${dir}/m3`, JSON.stringify(result.m3))
+}
+
 function fetchUpDownGrade(name: string) {
   const path = `/quote/${name}?p=${name}`
   const hostname = 'finance.yahoo.com'
@@ -156,7 +167,6 @@ function extractUpDownGrade(result: string) {
   const endIndex = result.indexOf('\n', index+1)
 
   if (index === -1) return undefined
-  console.log(result.substring(index, endIndex))
   const line = result.substring(index, endIndex)
   const re = /^root.App.main = (.*);$/
 
@@ -203,5 +213,11 @@ function extractUpDownGrade(result: string) {
     results.forEach(result => {
       saveExchange(result)
     })
-  })
+  }).then(async () => await Promise.all(
+    ticks.map(fetchSwedenTick)
+  )).then(results => {
+    results.forEach(result => {
+      saveSweedenTick(result)
+    })
+  }).catch(err => console.log)
 })()
