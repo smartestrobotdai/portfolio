@@ -3,7 +3,7 @@ import { arrayBuffer } from 'stream/consumers'
 import { fetchSwedenTick, saveSweedenTick, TickSweden } from './sweden'
 import { fetch } from './util'
 import { extractData, extractUpDownGrade, fetchData, fetchUpDownGrade, saveAllData, saveData, saveExchange, saveUpDownGrade } from './yahoo'
-
+import fs from 'fs'
 
 /* financial
 
@@ -26,6 +26,31 @@ context.dispatcher.stores.PageStore.upgradeDowngradeHistory.history
 
 const stocks = ['AZN.ST', 'ESSITY-B.ST', 'AAPL', 'ERIC-B.ST', 'MSFT', 'PFE', 'AMBK', 'HEXA-B.ST', 'TSLA', 'AMZN', 'T', 'MRK', 'DDAIF', 'AIR.F', 'GOOGL', 'INTC', 'NVDA', 'DIS', 'RHHBY', 'NSRGY', 'TSM']
 const indicators = ['CL=F','ZB=F', '^DJI', '^OMX','SEK=X', 'EURSEK=X', 'EUR=X']
+
+interface FredSource {
+  url: string
+  name: string
+}
+
+const FRED_HOST = 'fred.stlouisfed.org'
+const fredData: FredSource[] = [{
+    url: '/graph/fredgraph.csv?bgcolor=%23e1e9f0&chart_type=line&drp=0&fo=open%20sans&graph_bgcolor=%23ffffff&height=450&mode=fred&recession_bars=on&txtcolor=%23444444&ts=12&tts=12&width=1168&nt=0&thu=0&trc=0&show_legend=yes&show_axis_titles=yes&show_tooltip=yes&id=M1SL&scale=left&cosd=2011-12-01&coed=2021-12-01&line_color=%234572a7&link_values=false&line_style=solid&mark_type=none&mw=3&lw=2&ost=-99999&oet=99999&mma=0&fml=a&fq=Monthly&fam=avg&fgst=lin&fgsnd=2020-02-01&line_index=1&transformation=lin&vintage_date=2022-01-31&revision_date=2022-01-31&nd=1959-01-01',
+    name: 'M1SL'
+  }, {
+    url: '/graph/fredgraph.csv?bgcolor=%23e1e9f0&chart_type=line&drp=0&fo=open%20sans&graph_bgcolor=%23ffffff&height=450&mode=fred&recession_bars=on&txtcolor=%23444444&ts=12&tts=12&width=1168&nt=0&thu=0&trc=0&show_legend=yes&show_axis_titles=yes&show_tooltip=yes&id=UNRATE&scale=left&cosd=2011-12-01&coed=2021-12-01&line_color=%234572a7&link_values=false&line_style=solid&mark_type=none&mw=3&lw=2&ost=-99999&oet=99999&mma=0&fml=a&fq=Monthly&fam=avg&fgst=lin&fgsnd=2020-02-01&line_index=1&transformation=lin&vintage_date=2022-01-31&revision_date=2022-01-31&nd=1948-01-01',
+    name: 'UNRATE'
+  }, {
+    url: '/graph/fredgraph.csv?bgcolor=%23e1e9f0&chart_type=line&drp=0&fo=open%20sans&graph_bgcolor=%23ffffff&height=450&mode=fred&recession_bars=on&txtcolor=%23444444&ts=12&tts=12&width=1168&nt=0&thu=0&trc=0&show_legend=yes&show_axis_titles=yes&show_tooltip=yes&id=GDP&scale=left&cosd=2011-10-01&coed=2021-10-01&line_color=%234572a7&link_values=false&line_style=solid&mark_type=none&mw=3&lw=2&ost=-99999&oet=99999&mma=0&fml=a&fq=Quarterly&fam=avg&fgst=lin&fgsnd=2020-02-01&line_index=1&transformation=lin&vintage_date=2022-01-31&revision_date=2022-01-31&nd=1947-01-01',
+    name: 'GDP'
+  }, {
+    url: '/graph/fredgraph.csv?bgcolor=%23e1e9f0&chart_type=line&drp=0&fo=open%20sans&graph_bgcolor=%23ffffff&height=450&mode=fred&recession_bars=on&txtcolor=%23444444&ts=12&tts=12&width=1168&nt=0&thu=0&trc=0&show_legend=yes&show_axis_titles=yes&show_tooltip=yes&id=CPALTT01USM657N&scale=left&cosd=1960-01-01&coed=2021-12-01&line_color=%234572a7&link_values=false&line_style=solid&mark_type=none&mw=3&lw=2&ost=-99999&oet=99999&mma=0&fml=a&fq=Monthly&fam=avg&fgst=lin&fgsnd=2020-02-01&line_index=1&transformation=lin&vintage_date=2022-01-31&revision_date=2022-01-31&nd=1960-01-01',
+    name: 'CPI'
+  }, {
+    url: '/graph/fredgraph.csv?bgcolor=%23e1e9f0&chart_type=line&drp=0&fo=open%20sans&graph_bgcolor=%23ffffff&height=450&mode=fred&recession_bars=on&txtcolor=%23444444&ts=12&tts=12&width=1168&nt=0&thu=0&trc=0&show_legend=yes&show_axis_titles=yes&show_tooltip=yes&id=WM2NS&scale=left&cosd=2012-01-03&coed=2022-01-03&line_color=%234572a7&link_values=false&line_style=solid&mark_type=none&mw=3&lw=2&ost=-99999&oet=99999&mma=0&fml=a&fq=Weekly%2C%20Ending%20Monday&fam=avg&fgst=lin&fgsnd=2020-02-01&line_index=1&transformation=lin&vintage_date=2022-01-31&revision_date=2022-01-31&nd=1980-11-03',
+    name: 'M2'
+  }
+]
+
 //const stocks:string[] = []
 
 // const exchanges = [{
@@ -61,8 +86,7 @@ const swedenTicks:any[] = [
     query: [],
     path: '/OV0104/v1/doris/en/ssd/PR/PR0101/PR0101A/KPItotM'
   }
-];
-
+]
 
 async function handleStockBatch(stockChunkIt: Iterator<any[]>): Promise<any>{  
   const {value, done} = stockChunkIt.next()
@@ -98,10 +122,48 @@ async function handleStocks(stocks: any[], maxConcurrentRequest:number) {
   handleStockBatch(stockChunkIt)
 }
 
+function fetchFredData(fred: FredSource) {
+  const url = fred.url
+  return fetch(url, FRED_HOST)
+}
+
+function handleFredBatch(tickChunkIt: Iterator<any[]>): Promise<any> {
+  const {value, done} = tickChunkIt.next()
+  if (done) {return Promise.resolve()}
+  console.log('Download Fred data for ', value.map((v: FredSource) => v.name))
+  return Promise.all(value.map(fetchFredData)).then(results => {
+    results.forEach((result,idx) => {
+      if (result) {
+        const {name} = value[idx]
+        console.log(`Saving Data from FRED: ${name}`)
+        fs.writeFileSync(`../data/fred/${name}`, result)
+      }
+    })
+    console.log('11111')
+    return tickChunkIt
+  }).then(handleFredBatch)
+}
+
+function handleFredData(fredTicks: any[], maxConcurrentRequest: number) {
+  const tickChunkIt = splitArrays(fredTicks, maxConcurrentRequest)
+  return handleFredBatch(tickChunkIt)
+}
 
 (async () => {
-  await handleStocks(stocks.concat(indicators), 3).then(() => {console.log('test')}).catch(err => console.log)
+  try {
+    await handleFredData(fredData, 3)
+    .catch(err => console.log)
+  } catch(error) {
+    console.log(error)
+  }
+
 })()
+
+// (async () => {
+//   await handleStocks(stocks.concat(indicators), 3)
+//     .then(() => handleFredData(fredData, 3))
+//     .catch(err => console.log)
+// })()
 
 // (async () => {
 //   handleStocks(stocks).then(async () => await Promise.all(
