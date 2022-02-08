@@ -1,9 +1,9 @@
 
 import { arrayBuffer } from 'stream/consumers'
 import { fetchSwedenTick, saveSweedenTick, TickSweden } from './sweden'
-import { fetch } from './util'
+import { fetch, mkdir, post } from './util'
 import { extractData, extractUpDownGrade, fetchData, fetchUpDownGrade, saveAllData, saveData, saveExchange, saveUpDownGrade } from './yahoo'
-import fs from 'fs'
+import fs  from 'fs'
 
 /* financial
 
@@ -70,16 +70,23 @@ interface Exchange {
 }
 const exchanges: Exchange[] = []
 
-const swedenTicks:any[] = [
+interface SCBTick {
+  name: string
+  query: any[]
+  path: string
+}
+
+const SCB_TICK_HOST = 'api.scb.se'
+const scbTicks:SCBTick[] = [
   {
     name: 'm1',
     query: [{code:'Penningm', selection: {filter:'item', values:['5LLM1.1E.NEP.V.A']}}],
-    path: '/FM/FM5001/FM5001A/FM5001SDDSPM'
+    path: '/OV0104/v1/doris/en/ssd/FM/FM5001/FM5001A/FM5001SDDSPM'
   },
   {
     name: 'm3',
     query: [{code:'Penningm', selection: {filter:'item', values:['5LLM3a.1E.NEP.V.A']}}],
-    path: '/FM/FM5001/FM5001A/FM5001SDDSPM'
+    path: '/OV0104/v1/doris/en/ssd/FM/FM5001/FM5001A/FM5001SDDSPM'
   },
   {
     name: 'cpi',
@@ -139,7 +146,6 @@ function handleFredBatch(tickChunkIt: Iterator<any[]>): Promise<any> {
         fs.writeFileSync(`../data/fred/${name}`, result)
       }
     })
-    console.log('11111')
     return tickChunkIt
   }).then(handleFredBatch)
 }
@@ -149,20 +155,46 @@ function handleFredData(fredTicks: any[], maxConcurrentRequest: number) {
   return handleFredBatch(tickChunkIt)
 }
 
+function fetchSCBData(scbTick: SCBTick) {
+  const {path, query} = scbTick
+  const response = {format: 'json'}
+  return post(path, SCB_TICK_HOST, {query, response})
+}
+
+function handleSwedenBatch(scbTicksIt: Iterator<any[]>): Promise<any> {
+  const {value, done} = scbTicksIt.next()
+  if (done) {return Promise.resolve()}
+  console.log('Download SCB data for ', value.map((v: SCBTick) => v.name))
+  return Promise.all(value.map(fetchSCBData)).then(results => {
+    results.forEach((result,idx) => {
+      if (result) {
+        const {name} = value[idx]
+        console.log(`Saving Data from SCB: ${name}`)
+        mkdir('../data/scb/')
+        fs.writeFileSync(`../data/scb/${name}`, result)
+      }
+    })
+    return scbTicksIt
+  }).then(handleSwedenBatch)
+}
+
 (async () => {
   try {
-    await handleFredData(fredData, 3)
+    const scbTicksChunk = splitArrays(scbTicks, 3)
+    handleSwedenBatch(scbTicksChunk)
     .catch(err => console.log)
   } catch(error) {
     console.log(error)
   }
-
 })()
 
 // (async () => {
-//   await handleStocks(stocks.concat(indicators), 3)
-//     .then(() => handleFredData(fredData, 3))
+//   try {
+//     await handleFredData(fredData, 3)
 //     .catch(err => console.log)
+//   } catch(error) {
+//     console.log(error)
+//   }
 // })()
 
 // (async () => {
