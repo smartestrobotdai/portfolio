@@ -1,8 +1,5 @@
-
-import { arrayBuffer } from 'stream/consumers'
-import { fetchSwedenTick, saveSweedenTick, TickSweden } from './sweden'
 import { fetch, mkdir, post } from './util'
-import { extractData, extractUpDownGrade, fetchData, fetchUpDownGrade, saveAllData, saveData, saveExchange, saveUpDownGrade } from './yahoo'
+import { extractData, fetchData, fetchMinuteData, saveAllData, saveAllMinuteData} from './yahoo'
 import fs  from 'fs'
 
 /* financial
@@ -13,6 +10,8 @@ price
 https://query1.finance.yahoo.com/v8/finance/chart/AZN.ST?region=US&lang=en-US&includePrePost=false&interval=2m&useYfid=true&range=1d&corsDomain=finance.yahoo.com&.tsrc=finance
 https://query1.finance.yahoo.com/v8/finance/chart/AAPL?region=US&lang=en-US&includePrePost=false&interval=1d&useYfid=true&range=5y&corsDomain=finance.yahoo.com&.tsrc=finance
 
+limit the time
+period1=1603753200&period2=1626904800
 
 SEK-USD
 https://query1.finance.yahoo.com/v8/finance/chart/SEK=X?region=US&lang=en-US&includePrePost=false&interval=1d&useYfid=true&range=5y&corsDomain=finance.yahoo.com&.tsrc=finance
@@ -25,15 +24,15 @@ context.dispatcher.stores.PageStore.upgradeDowngradeHistory.history
 */
 
 const stocks = ['AZN.ST', 'ESSITY-B.ST', 'AAPL', 'ERIC-B.ST', 'MSFT', 'PFE', 'AMBK', 'HEXA-B.ST', 'TSLA', 'AMZN', 'T', 'MRK', 'DDAIF', 'AIR.F', 'GOOGL', 'INTC', 'NVDA', 'DIS', 'RHHBY', 'NSRGY', 'TSM']
-const indicators = ['CL=F','ZB=F', '^DJI', '^OMX','SEK=X', 'EURSEK=X', 'EUR=X']
+const indicators = ['CL=F','ZB=F', 'GC=F', '^DJI', '^OMX','SEK=X', 'EURSEK=X', 'EUR=X']
 
-interface FredSource {
+interface FredTick {
   url: string
   name: string
 }
 
 const FRED_HOST = 'fred.stlouisfed.org'
-const fredData: FredSource[] = [{
+const fredTicks: FredTick[] = [{
     url: '/graph/fredgraph.csv?bgcolor=%23e1e9f0&chart_type=line&drp=0&fo=open%20sans&graph_bgcolor=%23ffffff&height=450&mode=fred&recession_bars=on&txtcolor=%23444444&ts=12&tts=12&width=1168&nt=0&thu=0&trc=0&show_legend=yes&show_axis_titles=yes&show_tooltip=yes&id=M1SL&scale=left&cosd=2011-12-01&coed=2021-12-01&line_color=%234572a7&link_values=false&line_style=solid&mark_type=none&mw=3&lw=2&ost=-99999&oet=99999&mma=0&fml=a&fq=Monthly&fam=avg&fgst=lin&fgsnd=2020-02-01&line_index=1&transformation=lin&vintage_date=2022-01-31&revision_date=2022-01-31&nd=1959-01-01',
     name: 'M1SL'
   }, {
@@ -107,6 +106,18 @@ async function handleStockBatch(stockChunkIt: Iterator<any[]>): Promise<any>{
   }).then(() => handleStockBatch(stockChunkIt))
 }
 
+function handleStockMinuteBatch(stockChunkIt: Iterator<any[]>): Promise<any>{  
+  const {value, done} = stockChunkIt.next()
+  if (done) {return Promise.resolve()}
+  console.log('Downloading Minute data for ', value)
+  return Promise.all(value.map(fetchMinuteData)).then(results => {
+    return results.map(extractData)
+  }).then((results:any) => {
+    console.log('Saving Minute Data')
+    return saveAllMinuteData(results)
+  }).then(() => handleStockMinuteBatch(stockChunkIt))
+}
+
 function *splitArrays(arr:any[], maxNumber:number) {
   for (let pos = 0; pos < arr.length; pos += maxNumber) {
     yield arr.slice(pos, pos + maxNumber)
@@ -115,21 +126,15 @@ function *splitArrays(arr:any[], maxNumber:number) {
 
 async function handleStocks(stocks: any[], maxConcurrentRequest:number) {
   const stockChunkIt = splitArrays(stocks, maxConcurrentRequest)
-
-  // do {
-  //   const {value, done} = stocksChunks.next()
-  //   if (done) {
-  //     break
-  //   }
-
-  //   console.log(value)
-  // } while(1)
-  
-  // console.log(stocksChunks.next())
-  handleStockBatch(stockChunkIt)
+  return handleStockBatch(stockChunkIt)
 }
 
-function fetchFredData(fred: FredSource) {
+async function handleStocksMinute(stocks: any[], maxConcurrentRequest:number) {
+  const stockChunkIt = splitArrays(stocks, maxConcurrentRequest)
+  return handleStockMinuteBatch(stockChunkIt)
+}
+
+function fetchFredData(fred: FredTick) {
   const url = fred.url
   return fetch(url, FRED_HOST)
 }
@@ -137,7 +142,7 @@ function fetchFredData(fred: FredSource) {
 function handleFredBatch(tickChunkIt: Iterator<any[]>): Promise<any> {
   const {value, done} = tickChunkIt.next()
   if (done) {return Promise.resolve()}
-  console.log('Download Fred data for ', value.map((v: FredSource) => v.name))
+  console.log('Download Fred data for ', value.map((v: FredTick) => v.name))
   return Promise.all(value.map(fetchFredData)).then(results => {
     results.forEach((result,idx) => {
       if (result) {
@@ -161,7 +166,7 @@ function fetchSCBData(scbTick: SCBTick) {
   return post(path, SCB_TICK_HOST, {query, response})
 }
 
-function handleSwedenBatch(scbTicksIt: Iterator<any[]>): Promise<any> {
+function handleSCBBatch(scbTicksIt: Iterator<any[]>): Promise<any> {
   const {value, done} = scbTicksIt.next()
   if (done) {return Promise.resolve()}
   console.log('Download SCB data for ', value.map((v: SCBTick) => v.name))
@@ -175,27 +180,20 @@ function handleSwedenBatch(scbTicksIt: Iterator<any[]>): Promise<any> {
       }
     })
     return scbTicksIt
-  }).then(handleSwedenBatch)
+  }).then(handleSCBBatch)
+}
+
+function handleSCBData(scbTicks: SCBTick[], maxConcurrentRequest: number) {
+  const tickChunkIt = splitArrays(scbTicks, maxConcurrentRequest)
+  return handleSCBBatch(tickChunkIt)
 }
 
 (async () => {
-  try {
-    const scbTicksChunk = splitArrays(scbTicks, 3)
-    handleSwedenBatch(scbTicksChunk)
-    .catch(err => console.log)
-  } catch(error) {
-    console.log(error)
-  }
+  return await handleStocks(stocks.concat(indicators), 3)
+  .then(() => handleStocksMinute(stocks.concat(indicators), 2))
+    .then(() => handleFredData(fredTicks, 3))
+    .then(() => handleSCBData(scbTicks, 3))
 })()
-
-// (async () => {
-//   try {
-//     await handleFredData(fredData, 3)
-//     .catch(err => console.log)
-//   } catch(error) {
-//     console.log(error)
-//   }
-// })()
 
 // (async () => {
 //   handleStocks(stocks).then(async () => await Promise.all(

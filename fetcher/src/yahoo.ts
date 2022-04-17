@@ -8,6 +8,22 @@ export function saveAllData(results: any[]) {
     }})
 }
 
+export function saveAllMinuteData(results: any[]) {
+  results.forEach((result:any) => {
+    if (result) {
+      saveMinuteData(result)
+    }})
+}
+
+export function saveMinuteData(result:any) {
+  const stockName = result.meta.symbol
+  const isIndicator = stockName[0] === '^' || stockName.includes('=')
+  const type = isIndicator ? 'indicators' : 'stocks'
+  let dir = `../data/${type}/${stockName}/raw-minute`
+  mkdir(dir)
+  console.log(`Saving Security Raw Minute Data: ${stockName}`)
+  fs.writeFileSync(`${dir}/data-${getCurDate()}`, JSON.stringify(result.data))
+}
 
 export async function saveData(result:any) {
   const stockName = result.meta.symbol
@@ -20,7 +36,14 @@ export async function saveData(result:any) {
   fs.writeFileSync(`${dir}/meta`, JSON.stringify(result.meta))
 }
 
-
+function getCurDate() {
+  let ts = Date.now();
+  let date_ob = new Date(ts);
+  let date = date_ob.getDate();
+  let month = date_ob.getMonth() + 1;
+  let year = date_ob.getFullYear();
+  return `${year}${month}${date}`
+}
 
 export async function saveUpDownGrade(result: any, name: string) {
   let dir = `../data/${name}`
@@ -43,7 +66,7 @@ export function fetchUpDownGrade(name: string) {
   const hostname = 'finance.yahoo.com'
   return fetch(path, hostname)
 }
-  
+
 export function extractUpDownGrade(result: string) {
   const index = result.indexOf('root.App.main')
   const endIndex = result.indexOf('\n', index+1)
@@ -59,6 +82,11 @@ export function extractUpDownGrade(result: string) {
 
 export const fetchData = (name: string) => {
   const path = `/v8/finance/chart/${name}?region=US&lang=en-US&includePrePost=false&interval=1d&useYfid=true&range=10y&corsDomain=finance.yahoo.com&.tsrc=finance`
+  return fetch(path, 'query1.finance.yahoo.com')
+}
+
+export const fetchMinuteData = (name: string) => {
+  const path = `/v8/finance/chart/${name}?region=US&lang=en-US&includePrePost=false&interval=1m&useYfid=true&range=5d&corsDomain=finance.yahoo.com&.tsrc=finance`
   return fetch(path, 'query1.finance.yahoo.com')
 }
 
