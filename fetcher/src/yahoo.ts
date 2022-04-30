@@ -23,9 +23,10 @@ export function saveMinuteData(result:any) {
   mkdir(dir)
   console.log(`Saving Security Raw Minute Data: ${stockName}`)
   fs.writeFileSync(`${dir}/data-${getCurDate()}`, JSON.stringify(result.data))
+
 }
 
-export async function saveData(result:any) {
+export function saveData(result:any) {
   const stockName = result.meta.symbol
   const isIndicator = stockName[0] === '^' || stockName.includes('=')
   const type = isIndicator ? 'indicators' : 'stocks'
@@ -34,6 +35,11 @@ export async function saveData(result:any) {
   console.log(`Saving Security: ${stockName}`)
   fs.writeFileSync(`${dir}/data`, JSON.stringify(result.data))
   fs.writeFileSync(`${dir}/meta`, JSON.stringify(result.meta))
+
+  console.log(`Saving Security into Azure: ${stockName}`)
+  const azureDir = dir.split('/').slice(1).join('/')
+  return createAzureDir(azureDir).then(() => createAzureFile(azureDir, 'data', JSON.stringify(result.data)))
+    .then(() => createAzureFile(azureDir, 'meta', JSON.stringify(result.data)))
 }
 
 function getCurDate() {
