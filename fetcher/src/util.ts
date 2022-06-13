@@ -61,9 +61,18 @@ export const post = (path: string, hostname: string, reqBody: any): Promise<stri
   }
 
   export function mkdir(dir:string) {
-    if (!fs.existsSync(dir)){
-      fs.mkdirSync(dir)
-    }
+    dir.split('/').reduce(
+      (directories, directory) => {
+        directories += `${directory}/`;
+    
+        if (!fs.existsSync(directories)) {
+          fs.mkdirSync(directories);
+        }
+    
+        return directories;
+      },
+      '',
+    );
   }
   
   export function deleteAllFiles(dir:string) {
