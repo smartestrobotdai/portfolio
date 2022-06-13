@@ -1,6 +1,7 @@
 import { fetch, mkdir, post } from './util'
 import { extractData, fetchData, fetchMinuteData, saveAllData, saveAllMinuteData} from './yahoo'
 import fs  from 'fs'
+import { createAzureDir, createAzureFile } from './shared-file'
 
 /* financial
 
@@ -24,7 +25,7 @@ context.dispatcher.stores.PageStore.upgradeDowngradeHistory.history
 */
 
 const stocks = ['AZN.ST', 'ESSITY-B.ST', 'AAPL', 'ERIC-B.ST', 'MSFT', 'PFE', 'AMBK', 'HEXA-B.ST', 'TSLA', 'AMZN', 'T', 'MRK', 'DDAIF', 'AIR.F', 'GOOGL', 'INTC', 'NVDA', 'DIS', 'RHHBY', 'NSRGY', 'TSM']
-const indicators = ['CL=F','ZB=F', 'GC=F', '^DJI', '^OMX','SEK=X', 'EURSEK=X', 'EUR=X']
+const indicators = ['CL=F','ZB=F', 'GC=F', '^DJI', '^OMX','SEK=X', 'EURSEK=X', 'EUR=X', 'SI=F', 'HG=F', 'LE=F', 'SB=F', 'ZS=F']
 
 interface FredTick {
   url: string
@@ -151,13 +152,23 @@ function handleFredBatch(tickChunkIt: Iterator<any[]>): Promise<any> {
         fs.writeFileSync(`../data/fred/${name}`, result)
       }
     })
-    return tickChunkIt
-  }).then(handleFredBatch)
+    return results
+  }).then(results => Promise.all(results.map((result,idx) => {
+    if(result) {
+      const {name} = value[idx]
+      console.log(`Saving Data from FRED to Azure: ${name}`)
+      return createAzureFile('fred', name, result)
+    } else {
+      return Promise.resolve()
+    }
+  }))).then(() => handleSCBBatch(tickChunkIt))
 }
 
 function handleFredData(fredTicks: any[], maxConcurrentRequest: number) {
-  const tickChunkIt = splitArrays(fredTicks, maxConcurrentRequest)
-  return handleFredBatch(tickChunkIt)
+  createAzureDir('fred').then(() => {
+    const tickChunkIt = splitArrays(fredTicks, maxConcurrentRequest)
+    return handleFredBatch(tickChunkIt)
+  })
 }
 
 function fetchSCBData(scbTick: SCBTick) {
@@ -179,20 +190,54 @@ function handleSCBBatch(scbTicksIt: Iterator<any[]>): Promise<any> {
         fs.writeFileSync(`../data/scb/${name}`, result)
       }
     })
-    return scbTicksIt
-  }).then(handleSCBBatch)
+    return results
+  }).then(results => Promise.all(results.map((result,idx) => {
+      if(result) {
+        const {name} = value[idx]
+        console.log(`Saving Data from SCB to Azure: ${name}`)
+        return createAzureFile('scb', name, result)
+      } else {
+        return Promise.resolve()
+      }
+    }))).then(() => handleSCBBatch(scbTicksIt))
 }
 
-function handleSCBData(scbTicks: SCBTick[], maxConcurrentRequest: number) {
-  const tickChunkIt = splitArrays(scbTicks, maxConcurrentRequest)
-  return handleSCBBatch(tickChunkIt)
+function handleInternetDataBatch(datasetName: string, tickChunkIt: Iterator<any[]>, fetchFunc: (a: any) => Promise<string>): Promise<any> {
+  const {value, done} = tickChunkIt.next()
+  if (done) {return Promise.resolve()}
+  console.log(`Download ${datasetName} data for `, value.map((v:any) => v.name))
+  return Promise.all(value.map(fetchFunc)).then(results => {
+    results.forEach((result,idx) => {
+      if (result) {
+        const {name} = value[idx]
+        console.log(`Saving Data from ${datasetName}: ${name}`)
+        mkdir(`../data/${datasetName}/`)
+        fs.writeFileSync(`../data/${datasetName}/${name}`, result)
+      }
+    })
+    return results
+  }).then(results => Promise.all(results.map((result,idx) => {
+      if(result) {
+        const {name} = value[idx]
+        console.log(`Saving Data from ${datasetName} to Azure: ${name}`)
+        return createAzureFile(datasetName, name, result)
+      } else {
+        return Promise.resolve()
+      }
+    }))).then(() => handleInternetDataBatch(datasetName, tickChunkIt, fetchFunc))
+}
+
+function handleInternetData(datasetName: string, ticks: any[], concurrentRequest: 3, fetchFunc: (a: any) => Promise<string>) {
+  const tickChunkIt = splitArrays(ticks, concurrentRequest)
+  // create azure directory
+  return createAzureDir(datasetName).then(() => handleInternetDataBatch(datasetName, tickChunkIt, fetchFunc))
 }
 
 (async () => {
   return await handleStocks(stocks.concat(indicators), 3)
   .then(() => handleStocksMinute(stocks.concat(indicators), 2))
-    .then(() => handleFredData(fredTicks, 3))
-    .then(() => handleSCBData(scbTicks, 3))
+    .then(() => handleInternetData('fred', fredTicks, 3, fetchFredData))
+    .then(() => handleInternetData('scb', scbTicks, 3, fetchSCBData))
 })()
 
 // (async () => {

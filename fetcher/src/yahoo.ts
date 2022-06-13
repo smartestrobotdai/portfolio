@@ -1,5 +1,6 @@
 import { fetch, mkdir } from "./util"
 import fs from 'fs'
+import { createAzureDir, createAzureFile } from "./shared-file"
 
 export function saveAllData(results: any[]) {
   results.forEach((result:any) => {
@@ -24,20 +25,23 @@ export function saveMinuteData(result:any) {
   console.log(`Saving Security Raw Minute Data: ${stockName}`)
   fs.writeFileSync(`${dir}/data-${getCurDate()}`, JSON.stringify(result.data))
 
+  console.log(`Saving Security Raw Minute Data into Azure: ${stockName}`)
+  const azureDir = dir.split('/').slice(2).join('/')
+  return createAzureDir(azureDir).then(() => createAzureFile(azureDir, `data-${getCurDate()}`, JSON.stringify(result.data)))
 }
 
 export function saveData(result:any) {
   const stockName = result.meta.symbol
   const isIndicator = stockName[0] === '^' || stockName.includes('=')
   const type = isIndicator ? 'indicators' : 'stocks'
-  let dir = `../data/${type}/${stockName}`
+  let dir = `../data/${type}/${stockName}/raw-daily`
   mkdir(dir)
   console.log(`Saving Security: ${stockName}`)
-  fs.writeFileSync(`${dir}/data`, JSON.stringify(result.data))
-  fs.writeFileSync(`${dir}/meta`, JSON.stringify(result.meta))
+  fs.writeFileSync(`${dir}/data-${getCurDate()}`, JSON.stringify(result.data))
+  fs.writeFileSync(`${dir}/meta-${getCurDate()}`, JSON.stringify(result.meta))
 
   console.log(`Saving Security into Azure: ${stockName}`)
-  const azureDir = dir.split('/').slice(1).join('/')
+  const azureDir = dir.split('/').slice(2).join('/')
   return createAzureDir(azureDir).then(() => createAzureFile(azureDir, 'data', JSON.stringify(result.data)))
     .then(() => createAzureFile(azureDir, 'meta', JSON.stringify(result.data)))
 }
@@ -87,7 +91,7 @@ export function extractUpDownGrade(result: string) {
 }
 
 export const fetchData = (name: string) => {
-  const path = `/v8/finance/chart/${name}?region=US&lang=en-US&includePrePost=false&interval=1d&useYfid=true&range=10y&corsDomain=finance.yahoo.com&.tsrc=finance`
+  const path = `/v8/finance/chart/${name}?region=US&lang=en-US&includePrePost=false&interval=1d&useYfid=true&range=20y&corsDomain=finance.yahoo.com&.tsrc=finance`
   return fetch(path, 'query1.finance.yahoo.com')
 }
 
