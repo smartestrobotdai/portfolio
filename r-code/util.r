@@ -6,21 +6,29 @@ library(stringr)
 
 COURTAGE=0.00089
 
+
+
 kalman <- function(df, HHt_val, GGt_val) {
   df$mean <- (df$high + df$low)/2
   # kalman filter should accept the original number instead of log.
-  y <- as.numeric(exp(1)**df$mean)
+  y <- as.numeric((exp(1)**df$mean)/10)
   dt <- ct <- matrix(0)
   Tt <- matrix(1) # nolint
   a0 <- y[1] # Estimation of the first year flow
   P0 <- matrix(0.0003) # Variance of 'a0'
   Zt <- matrix(1)
-  res <- fkf(HHt = matrix(HHt_val), GGt = matrix(HHt_val), yt = rbind(y), Zt=Zt,a0 = a0, P0 = P0, dt = dt, ct = ct,
+  HHt_val <- abs(HHt_val)
+  GGt_val <- abs(GGt_val)
+  # HHt and GGt should change over time, as the stock price changes,
+  
+  HHt <- array(y * HHt_val, dim=c(1,1,length(y)))
+  GGt <- array(y * GGt_val, dim=c(1,1,length(y)))
+  res <- fkf(HHt = HHt, GGt = GGt, yt = rbind(y), Zt=Zt,a0 = a0, P0 = P0, dt = dt, ct = ct,
       Tt = Tt)
 
   len <- length(y)
   #df <- data.frame(y, res$at[1,1:len], resid[1:len], df$high, df$low, df$close, df$open, shift(df$close))
-  df <- df %>% mutate(mean=y, predict=log(res$at[1,1:len]), last_close=shift(df$close))
+  df <- df %>% mutate(predict=log(res$at[1,1:len]*10), last_close=shift(df$close))
 
   return(df)
 }
@@ -39,7 +47,7 @@ get_daily_profit <- function(par, df, verbose=TRUE, plot=FALSE, same_day_trade_a
     courtage_log <- log(1 - courtage)  #default -0.0015011
     buy_point <- 0
 
-    daily_trade <- function(x, max_resid_mean, max_resid_std) {
+    daily_trade <- function(x) {
       INVALID <-  (c(0, -1, 0))
       predict <- x["predict"]
       close <- x["close"]
@@ -153,18 +161,14 @@ get_daily_profit <- function(par, df, verbose=TRUE, plot=FALSE, same_day_trade_a
       }
       if (trade_times > 0 && verbose) {
         print(str_glue(
-          "DAY: row_id: {row_id} open:{open} close:{close} last_close:{last_close} \
-            profit: {profit} trade_times: {trade_times} hold: {hold}"))
+          "DAY: row_id: {row_id} open:{open} close:{close} last_close:{last_close} profit: {profit} trade_times: {trade_times} hold: {hold}"))
       }
       return(c(hold, profit, trade_times))
     }
 
 
     df <- kalman(df, HHt_val, GGt_val)
-
-    max_resid_std <- sd(df$max_resid)
-    max_resid_mean <- mean(df$max_resid)
-    result <- apply(df %>% mutate(row_id=row_number()) , 1, function(x) daily_trade(x, max_resid_mean, max_resid_std))
+    result <- apply(df %>% mutate(row_id=row_number()) , 1, function(x) daily_trade(x))
     df$hold=t(result)[,1]
     df$trade_profit=t(result)[,2]
     df$trade_times=t(result)[,3]
@@ -183,6 +187,7 @@ result_summary <- function(df, stop_loss, courtage=COURTAGE, verbose=FALSE) {
     avg_profit <- summary$sum / summary$n
     len <- dim(df)[1]
     avg_profit_no_model <- (df$mean[len] - df$mean[1])/len    
+    sum_no_model <- df$mean[len] - df$mean[1]
     print(summary)
   }
 
@@ -192,7 +197,8 @@ result_summary <- function(df, stop_loss, courtage=COURTAGE, verbose=FALSE) {
   annual_mean <- mean(summary2$sum)
   annual_sd <- sd(summary2$sum)
   if (verbose) {
-    print(str_glue("avg_profit:{avg_profit}, nomodel_profit:{avg_profit_no_model}, sum:{summary$sum}, trade_times:{summary$times} courtage: {courtage}"))
+    print(summary2)
+    print(str_glue("avg_profit:{avg_profit}, nomodel_profit:{avg_profit_no_model}, nomodel_sum: {sum_no_model} sum:{summary$sum}, trade_times:{summary$times} courtage: {courtage}"))
     print(str_glue("annaul_mean:{annual_mean} annual_sd:{annual_sd}"))
   }
   #pulish with low stop_loss and longer holding days.
