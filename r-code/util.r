@@ -299,6 +299,110 @@ set_colnames <- function(df, names) {
 left_merge_with_rowname <- function(x,y)
   transform(merge(x, y,all.x = TRUE, by = 0), row.names = Row.names, Row.names = NULL)
 
+outer_merge_with_rowname <- function(x,y)
+  transform(merge(x, y,all = TRUE, by = 0), row.names = Row.names, Row.names = NULL)
+
+append_colname <- function(df, name) {
+  colnames(df) <- paste0(colnames(df), paste0('.',name))
+  return(df)
+}
+
+# the most important function! test carefully!
+get_daily_profit <- function(open, close, high, low, last_close, predict, 
+  stop_loss, last_buy_price, sell_deviation, 
+  buy_deviation, hold, courtage_log) {
+  
+  profit <- 0
+  up <- close > open
+  log_stop_loss <- log(stop_loss)  # always negative
+  low_stop_loss_threshold <- last_buy_price + log_stop_loss
+  high_sell_threshold <- predict + sell_deviation
+  low_buy_threshold <- predict + buy_deviation
+  trade_times <- 0
+
+  buy <- function(price) {
+    trade_times <<- trade_times + 1
+    last_buy_price <<- price
+    low_stop_loss_threshold <<- last_buy_price + log_stop_loss
+    hold <<- TRUE
+  }
+
+  sell <- function(price) {
+    trade_times <<- trade_times + 1
+    last_buy_price <<- 0
+    hold <<- FALSE
+  }
+
+  if (hold) {
+    # the max (low_buy_threshold, low_stop_loss_threshold) come first
+    if (up) {
+      if (low < low_stop_loss_threshold) {
+        sell_price = min(low_stop_loss_threshold, open)
+        sell(sell_price)
+        profit <- sell_price - last_close
+      } else if(high > high_sell_threshold) {
+        sell_price = max(open, high_sell_threshold)
+        sell(sell_point)
+        profit <- sell_price - last_close
+      } else {
+        profit <- close - last_close
+      }
+    } else {
+      if(high > high_sell_threshold) {
+        sell_price = max(open, high_sell_threshold)
+        sell(sell_price)
+        profit <- sell_price - last_close
+        if (low < low_buy_threshold) {
+          buy(low_buy_threshold)
+          if (low < low_stop_loss_threshold) {
+            sell(low_stop_loss_threshold)
+            profit <- profit + log_stop_loss
+          } else {
+            profit <- profit + close - last_buy_price
+          }
+        }
+      } else if (low < low_stop_loss_threshold) {
+        sell_price = min(low_stop_loss_threshold, open)
+        sell(sell_price)
+        profit <- sell_price - last_close
+      } else {
+        profit <- close - last_close
+      }
+    }
+  } else {
+    if(up) {
+      if (low < low_buy_threshold) {
+        buy_price = min(open, low_buy_threshold)
+        buy(buy_price)
+        if (low < low_stop_loss_threshold) {
+          sell(low_stop_loss_threshold)
+          profit <- log_stop_loss
+        } else if(high > high_sell_threshold) {
+          profit <- high_sell_threshold - last_buy_price
+          sell(high_sell_threshold)
+        } else {
+          profit <- profit + close - last_buy_price
+        }
+      }
+    } else {
+      if (low < low_buy_threshold) {
+        buy_price = min(open, low_buy_threshold)
+        buy(buy_price)
+        if (low < low_stop_loss_threshold) {
+          sell(low_stop_loss_threshold)
+          profit <-
+            profit + low_stop_loss_threshold - last_buy_price
+        } else {
+          profit <- profit + close - last_buy_price
+        }
+      }
+    }
+  }
+
+  profit <- profit + trade_times * courtage_log
+  return(c(profit, trade_times, hold, last_buy_price))
+}
+
 get_sek_usd <- function() {
   sek_df <- data.frame(getSymbols('SEK=X',src='yahoo',auto.assign=FALSE))
   #rownames(sek_df) <- lapply(rownames(sek_df), function(x) str_replace_all(substring(x, 2), "\\.", '-'))
@@ -329,7 +433,7 @@ data_prep <- function(stock_name, sek_df=NULL, start_date='2007-01-01', end_date
   df <- data.frame(log(df)) %>% select(-last_col())
 
   df <- df %>% set_colnames(c('open', 'high', 'low', 'close', 'volume', 'adjusted')) %>% 
-    mutate(last_close=shift(close))
+    mutate(last_close=shift(close), no_model_profit=c(0, diff(close)))
   df$last_close[1] <- df$open[1]
   return(df)
 }
