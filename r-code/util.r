@@ -65,7 +65,7 @@ kalman <- function(df, HHt_val, GGt_val) {
   return(df)
 }
 
-get_daily_profit <- function(par, df, verbose=TRUE, plot=FALSE, 
+get_daily_profit_old <- function(par, df, verbose=TRUE, plot=FALSE, 
   type='kalman',
   same_day_trade_allowed=TRUE, 
   courtage=COURTAGE) {
@@ -391,7 +391,7 @@ get_daily_profit <- function(open, close, high, low, last_close, predict,
         if (low < low_stop_loss_threshold) {
           sell(low_stop_loss_threshold)
           profit <-
-            profit + low_stop_loss_threshold - last_buy_price
+            profit + log_stop_loss
         } else {
           profit <- profit + close - last_buy_price
         }
@@ -404,28 +404,23 @@ get_daily_profit <- function(open, close, high, low, last_close, predict,
 }
 
 get_sek_usd <- function() {
-  sek_df <- data.frame(getSymbols('SEK=X',src='yahoo',auto.assign=FALSE))
+  sek_df <- data.frame(readRDS(file='data/SEK.X.rds'))
   #rownames(sek_df) <- lapply(rownames(sek_df), function(x) str_replace_all(substring(x, 2), "\\.", '-'))
-
+  
   sek_df$SEK.X.Mean <- (sek_df$SEK.X.High + sek_df$SEK.X.Close) / 2
+  sek_df$SEK.X.Mean <- na.approx(sek_df$SEK.X.Mean)
   sek_df <- sek_df %>% select(SEK.X.Mean)
   return(sek_df)
 }
 
 data_filter <- function(df, start_date, end_date) {
-  df %>% filter(rownames(df) > start_date) %>% filter(rownames(df) < end_date)
+  df %>% filter(rownames(df) > start_date & rownames(df) < end_date)
 }
                        
 g_sek_df = NULL
-data_prep <- function(stock_name, sek_df=NULL, start_date='2007-01-01', end_date="2022-09-30") {
-  if (is.null(sek_df)) {
-    if (is.null(g_sek_df)) {
-      g_sek_df <<- get_sek_usd() %>% data_filter(start_date, end_date)
-      
-    } 
-    sek_df <- g_sek_df
-  }
-  df <- data.frame(getSymbols(stock_name,src='yahoo',auto.assign=FALSE))
+data_prep <- function(stock_name, start_date='2007-01-01', end_date="2022-09-30") {
+  sek_df <- get_sek_usd()
+  df <- data.frame(readRDS(file=str_glue('data/{stock_name}.rds')))
   df <- df %>% data_filter(start_date, end_date)
   df <- left_merge_with_rowname(df, sek_df)
   df$SEK.X.Mean <- na.approx(df$SEK.X.Mean)
@@ -436,4 +431,49 @@ data_prep <- function(stock_name, sek_df=NULL, start_date='2007-01-01', end_date
     mutate(last_close=shift(close), no_model_profit=c(0, diff(close)))
   df$last_close[1] <- df$open[1]
   return(df)
+}
+
+process_one <- function(df, HHt_val, GGt_val, 
+  stop_loss, sell_dev, buy_dev, courtage) {
+  test <- function(acc, row, stop_loss, sell_deviation, 
+      buy_deviation, courtage_log) {
+    open <- row$open
+    high <- row$high
+    low <- row$low
+    close <- row$close
+    last_close <- row$last_close
+    predict <- row$predict
+    hold <- acc[3]
+    last_buy_price <- acc[4]
+    results <- get_daily_profit(open, close, high, low, last_close, predict, 
+      stop_loss, last_buy_price, sell_deviation, 
+      buy_deviation, hold, courtage_log)
+    return(c(results))
+  }
+  
+  df <- kalman(df, HHt_val, GGt_val)
+
+  courtage_log <- log(1 - courtage)
+  # init value: c(hold, last_buy_price)
+  df_list <- split(df, seq(nrow(df)))
+  appendix <- Reduce(function(acc, row) test(acc, row, stop_loss, 
+                               sell_dev, 
+                               buy_dev, 
+                              courtage_log), df_list, init=c(0, 0, 0, 0), accumulate=TRUE)
+  # discard the first row which is the init value
+  appendix <- tail(appendix, -1)
+  df$trade_profit <- as.numeric(lapply(appendix, '[[', 1))
+  df$trade_times <- as.numeric(lapply(appendix, '[[', 2))
+  df$hold <- as.numeric(lapply(appendix, '[[', 3))
+  df$last_buy_price <- as.numeric(lapply(appendix, '[[', 4))
+  return(df)
+}
+
+data_prep_multiple <- function(name_list) {
+  helper <- function(all, name) {
+    df <- data_prep(name)
+    colnames(df) <- paste(name, colnames(df), sep='.')
+    merge_with_rowname(all, df)
+  }
+  Reduce(helper, name_list, init=NULL)
 }
