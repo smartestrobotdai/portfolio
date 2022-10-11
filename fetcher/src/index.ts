@@ -1,5 +1,5 @@
 import { fetch, mkdir, post } from './util'
-import { extractData, fetchData, fetchMinuteData, saveAllData, saveAllMinuteData} from './yahoo'
+import { extractData, extractUpDownGrade, fetchData, fetchMinuteData, fetchUpDownGrade, saveData, saveMinuteData, saveUpDownGrade} from './yahoo'
 import fs  from 'fs'
 import { createAzureDir, createAzureFile } from './shared-file'
 
@@ -95,28 +95,47 @@ const scbTicks:SCBTick[] = [
   }
 ]
 
-async function handleStockBatch(stockChunkIt: Iterator<any[]>): Promise<any>{  
+async function handleBatch(stockChunkIt: Iterator<any[]>, fetchFunc: any, extractFunc: any, saveFunc: any): Promise<any> {
   const {value, done} = stockChunkIt.next()
   if (done) {return Promise.resolve()}
   console.log('Downloading data for ', value)
-  return Promise.all(value.map(fetchData)).then(results => {
-    return results.map(extractData)
+  return Promise.all(value.map(fetchFunc)).then(results => {
+    return results.map(extractFunc)
   }).then((results:any) => {
     console.log('Saving Data')
-    return saveAllData(results)
-  }).then(() => handleStockBatch(stockChunkIt))
+    results.map((result: any, idx: number) => saveFunc(value[idx], result))
+    return Promise.resolve()
+  }).then(() => handleBatch(stockChunkIt, fetchFunc, extractFunc, saveFunc))
+}
+
+async function handleStockBatch(stockChunkIt: Iterator<any[]>): Promise<any>{  
+  // const {value, done} = stockChunkIt.next()
+  // if (done) {return Promise.resolve()}
+  // console.log('Downloading data for ', value)
+  // return Promise.all(value.map(fetchData)).then(results => {
+  //   return results.map(extractData)
+  // }).then((results:any) => {
+  //   console.log('Saving Data')
+  //   return saveAllData(results)
+  // }).then(() => handleStockBatch(stockChunkIt))
+  return handleBatch(stockChunkIt, fetchData, extractData, saveData)
 }
 
 function handleStockMinuteBatch(stockChunkIt: Iterator<any[]>): Promise<any>{  
-  const {value, done} = stockChunkIt.next()
-  if (done) {return Promise.resolve()}
-  console.log('Downloading Minute data for ', value)
-  return Promise.all(value.map(fetchMinuteData)).then(results => {
-    return results.map(extractData)
-  }).then((results:any) => {
-    console.log('Saving Minute Data')
-    return saveAllMinuteData(results)
-  }).then(() => handleStockMinuteBatch(stockChunkIt))
+  // const {value, done} = stockChunkIt.next()
+  // if (done) {return Promise.resolve()}
+  // console.log('Downloading Minute data for ', value)
+  // return Promise.all(value.map(fetchMinuteData)).then(results => {
+  //   return results.map(extractData)
+  // }).then((results:any) => {
+  //   console.log('Saving Minute Data')
+  //   return saveAllMinuteData(results)
+  // }).then(() => handleStockMinuteBatch(stockChunkIt))
+  return handleBatch(stockChunkIt, fetchMinuteData, extractData, saveMinuteData)
+}
+
+function handleUpDownBatch(stockChunkIt: Iterator<any[]>): Promise<any> {
+  return handleBatch(stockChunkIt, fetchUpDownGrade, extractUpDownGrade, saveUpDownGrade)
 }
 
 function *splitArrays(arr:any[], maxNumber:number) {
@@ -134,6 +153,13 @@ async function handleStocksMinute(stocks: any[], maxConcurrentRequest:number) {
   const stockChunkIt = splitArrays(stocks, maxConcurrentRequest)
   return handleStockMinuteBatch(stockChunkIt)
 }
+
+async function handleUpDown(stocks: any[], maxConcurrentRequest:number) {
+  console.log('handle up down!')
+  const stockChunkIt = splitArrays(stocks, maxConcurrentRequest)
+  return handleUpDownBatch(stockChunkIt)
+}
+
 
 function fetchFredData(fred: FredTick) {
   const url = fred.url
@@ -235,7 +261,8 @@ function handleInternetData(datasetName: string, ticks: any[], concurrentRequest
 
 (async () => {
   return await handleStocks(stocks.concat(indicators), 3)
-  .then(() => handleStocksMinute(stocks.concat(indicators), 2))
+    .then(() => handleStocksMinute(stocks.concat(indicators), 2))
+    .then(() => handleUpDown(stocks, 3))
     .then(() => handleInternetData('fred', fredTicks, 3, fetchFredData))
     .then(() => handleInternetData('scb', scbTicks, 3, fetchSCBData))
 })()

@@ -2,22 +2,25 @@ import { fetch, mkdir } from "./util"
 import fs from 'fs'
 import { createAzureDir, createAzureFile } from "./shared-file"
 
-export function saveAllData(results: any[]) {
-  results.forEach((result:any) => {
-    if (result) {
-      saveData(result)
-    }})
-}
+// export function saveAllData(results: any[]) {
+//   results.forEach((result:any) => {
+//     if (result) {
+//       saveData(result)
+//     }})
+// }
 
-export function saveAllMinuteData(results: any[]) {
-  results.forEach((result:any) => {
-    if (result) {
-      saveMinuteData(result)
-    }})
-}
+// export function saveAllMinuteData(results: any[]) {
+//   results.forEach((result:any) => {
+//     if (result) {
+//       saveMinuteData(result)
+//     }})
+// }
 
-export function saveMinuteData(result:any) {
-  const stockName = result.meta.symbol
+export function saveMinuteData(stockName: string, result:any) {
+  if (!result) {
+    console.log(`No minute data fetched for ${stockName}`)
+    return
+  }
   const isIndicator = stockName[0] === '^' || stockName.includes('=')
   const type = isIndicator ? 'indicators' : 'stocks'
   let dir = `../data/${type}/${stockName}/raw-minute`
@@ -30,8 +33,7 @@ export function saveMinuteData(result:any) {
   return createAzureDir(azureDir).then(() => createAzureFile(azureDir, `data-${getCurDate()}`, JSON.stringify(result.data)))
 }
 
-export function saveData(result:any) {
-  const stockName = result.meta.symbol
+export function saveData(stockName: string, result:any) {
   const isIndicator = stockName[0] === '^' || stockName.includes('=')
   const type = isIndicator ? 'indicators' : 'stocks'
   let dir = `../data/${type}/${stockName}/raw-daily`
@@ -55,10 +57,10 @@ function getCurDate() {
   return `${year}${month}${date}`
 }
 
-export async function saveUpDownGrade(result: any, name: string) {
-  let dir = `../data/${name}`
+export async function saveUpDownGrade(stockName: string, result: any) {
+  let dir = `../data/stocks/${stockName}`
   mkdir(dir)
-  console.log(`Saving Updown grade data: ${name}`)
+  console.log(`Saving Updown grade data: ${stockName}`)
   fs.writeFileSync(`${dir}/updown`, JSON.stringify(result))
 }
 
