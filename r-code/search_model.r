@@ -35,31 +35,49 @@ get_prob_weight <- function(name, HHt_val, GGt_val,
     my_summary$daily
 }
 
+filter_with_monthly_limit <- function(df, monthly_limit) {
+  month = substr(rownames(df), 1,7)
+  df$month = month
+  df %>% group_by(month) %>% mutate(total_trade_times=cumsum(trade_times)) %>% 
+    filter(total_trade_times <= monthly_limit) %>% ungroup()
+}
+
 get_sample_profit <- function(name_list, HHt_val, GGt_val,
   stop_loss, sell_dev, 
-  buy_dev, courtage, isNYSE, use_close, to_sek=to_sek) {
+  buy_dev, courtage, isNYSE, use_close, to_sek=to_sek,
+  monthly_limit=monthly_limit) {
     df <- data_prep_multiple(name_list, HHt_val=HHt_val, GGt_val=GGt_val, isNYSE=isNYSE, use_close=use_close, to_sek=to_sek)
     df <- process_multiple(df, stop_loss, sell_dev, buy_dev, courtage)
     name_list_str <- paste0(name_list, sep='', collapse='-')
     write.csv(df, str_glue('csvs/{name_list_str}.csv'))
-
-    my_summary <- df %>% mutate(id=row_number()) %>% mutate(range=cut(id, seq(0, max(id)+252, 252))) %>% 
+    if (monthly_limit > 0) {
+      print(str_glue('monthly_limit: {monthly_limit}'))
+      print(dim(df))
+      df <- filter_with_monthly_limit(df, monthly_limit)    
+      print(dim(df))
+    }
+    df <- df %>% mutate(id=row_number())
+    write.csv(df, 'my_test.csv')
+    my_summary <- df %>% mutate(range=cut(id, seq(0, max(id)+252, 252))) %>% 
       group_by(range) %>% summarise(sum=sum(trade_profit))
+    print(my_summary)
+    
     mean(my_summary$sum) - 0.5 * sd(my_summary$sum)
-
 }
 
 
 
 
-
+get_log_file_name <- function() {
+  str_glue("opt_results_courtage_{courtage}_nyse_{isNYSE}_use_close_{use_close}_limit_{monthly_limit}")
+}
 
 highest <- -999
 
 my_optim <- function(par, k, name_list, courtage, isNYSE, min_sample_length, 
-max_sample_length, use_close, to_sek) {
-  
-  opt_results_file <- str_glue("opt_results_courtage_{courtage}_nyse_{isNYSE}_use_close_{use_close}.rds")
+max_sample_length, use_close, to_sek, monthly_limit) {
+  log_file_name <- get_log_file_name()
+  opt_results_file <- str_glue("{log_file_name}.rds")
 
 
   create_not_exist <- function(file_name) {
@@ -113,7 +131,8 @@ max_sample_length, use_close, to_sek) {
   for (sample in perm_samples) {
     sample_str <- paste0(sample, sep='', collapse='-')
     profit <- get_sample_profit(sample, par[1], par[2], par[3], par[4],
-      par[5], courtage=courtage, isNYSE=isNYSE, use_close=use_close, to_sek=to_sek)
+      par[5], courtage=courtage, isNYSE=isNYSE, use_close=use_close, to_sek=to_sek,
+      monthly_limit=monthly_limit)
     if (profit > highest) {
       highest <<- profit
       write_log(str_glue('Find new high: {profit} sample: {sample_str} par:{par_str}'))
@@ -131,8 +150,8 @@ max_sample_length, use_close, to_sek) {
 args = commandArgs(trailingOnly=TRUE)
 print(length(args))
 print(args)
-if (length(args) != 7) {
-  print("Usage: Rscript search_model.r isNYSE courtage n_samples min_sample_length max_sample_length use_close to_sek")
+if (length(args) != 8) {
+  print("Usage: Rscript search_model.r isNYSE courtage n_samples min_sample_length max_sample_length use_close to_sek monthly_limit")
   quit()
 }
 
@@ -143,15 +162,15 @@ min_sample_length <- as.numeric(args[4])
 max_sample_length <- as.numeric(args[5])
 use_close = as.logical(as.numeric(args[6]))
 to_sek = as.logical(as.numeric(args[7]))
-
+monthly_limit = as.numeric((args[8]))
 
 print(isNYSE)
 print(courtage)
 print(str_glue('use_close={use_close}'))
 
 write_log <- function(text) {
-  market <- if(isNYSE) 'nyse' else 'omx'
-  log_file <- str_glue("my_log_{market}_{courtage}_{use_close}.txt")
+  log_file_name <- get_log_file_name()
+  log_file <- str_glue("{log_file_name}.txt")
   text <- paste(Sys.time(), text)
   write(text,file=log_file,append=TRUE)
 }
@@ -162,6 +181,6 @@ name_list <- str_replace_all(file_list, '\\.rds','')
 fit <- optim(par=c(0.08, 0.08, 0.70, 0.05, -0.01), function(par)
    -my_optim(par, k, name_list=name_list, courtage=courtage, 
     isNYSE=isNYSE, min_sample_length=min_sample_length, max_sample_length=max_sample_length, 
-    use_close=use_close, to_sek=to_sek),
+    use_close=use_close, to_sek=to_sek, monthly_limit=monthly_limit),
    control=list(maxit=800, parscale=c(1, 1, 10, 1, 1)))
 fit

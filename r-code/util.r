@@ -241,7 +241,7 @@ get_daily_profit <- function(open, close, high, low, last_close, predict,
   return(c(profit, trade_times, hold, last_buy_price))
 }
 
-get_sek_usd <- function(predict=FALSE) {
+get_sek_usd <- function(predict=FALSE, mean_only=TRUE) {
   if (predict) {
     sek_df <- data.frame(getSymbols('SEK=X',src='yahoo',auto.assign=FALSE))
   } else {
@@ -252,10 +252,12 @@ get_sek_usd <- function(predict=FALSE) {
     rownames(sek_df) <- lapply(rownames(sek_df), function(x) str_replace_all(substring(x, 2), "\\.", '-'))
   }
   
-  
-  sek_df$SEK.X.Mean <- (sek_df$SEK.X.High + sek_df$SEK.X.Close) / 2
-  sek_df$SEK.X.Mean <- na.approx(sek_df$SEK.X.Mean)
-  sek_df <- sek_df %>% select(SEK.X.Mean)
+  if (mean_only) {
+    sek_df$SEK.X.Mean <- (sek_df$SEK.X.High + sek_df$SEK.X.Close) / 2
+    sek_df$SEK.X.Mean <- na.approx(sek_df$SEK.X.Mean)
+    sek_df <- sek_df %>% select(SEK.X.Mean)
+  }
+
   return(sek_df)
 }
 
@@ -271,13 +273,7 @@ g_sek_df = NULL
 data_prep <- function(stock_name, start_date='2007-01-01', 
   end_date="2022-09-30", HHt_val=NULL, GGt_val=NULL, predict=FALSE, isNYSE=TRUE, 
   use_close=FALSE, to_sek=TRUE) {
-  if (stock_name == 'SEK=X') {
-    data_dir = 'sek'
-    stock_name = 'SEK.X'
-  } else {
-    data_dir <- if (isNYSE) 'data' else 'omx'
-  }
-  
+  data_dir <- if (isNYSE) 'data' else 'omx'
   if (predict) {
     df <- data.frame(getSymbols(stock_name, src='yahoo', auto.assign=FALSE))
     df <- df %>% data_filter(start_date, NULL)
@@ -287,7 +283,6 @@ data_prep <- function(stock_name, start_date='2007-01-01',
   }
 
   df <- df %>% set_colnames(c('open', 'high', 'low', 'close', 'volume', 'adjusted'))
-
   # remove NA
   df <- df %>% filter(!is.na(close))
   if (to_sek) {
