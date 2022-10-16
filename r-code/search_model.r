@@ -28,8 +28,8 @@ make_samples <- function(w, r, k, prob) {
 }
 
 get_prob_weight <- function(name, HHt_val, GGt_val,
-  stop_loss, sell_dev, buy_dev, courtage, isNYSE) {
-    df <- data_prep(name, HHt_val=HHt_val, GGt_val=GGt_val, isNYSE=isNYSE)
+  stop_loss, sell_dev, buy_dev, courtage, isNYSE, use_close, to_sek) {
+    df <- data_prep(name, HHt_val=HHt_val, GGt_val=GGt_val, isNYSE=isNYSE, use_close=use_close, to_sek=to_sek)
     df <- process_one(df, stop_loss, sell_dev, buy_dev, courtage)
     my_summary <- df %>% filter(trade_profit != 0 | hold != 0) %>% summarise(sum=sum(trade_profit), n=n(), daily=sum/n)
     my_summary$daily
@@ -37,8 +37,8 @@ get_prob_weight <- function(name, HHt_val, GGt_val,
 
 get_sample_profit <- function(name_list, HHt_val, GGt_val,
   stop_loss, sell_dev, 
-  buy_dev, courtage, isNYSE) {
-    df <- data_prep_multiple(name_list, HHt_val=HHt_val, GGt_val=GGt_val, isNYSE=isNYSE)
+  buy_dev, courtage, isNYSE, use_close, to_sek=to_sek) {
+    df <- data_prep_multiple(name_list, HHt_val=HHt_val, GGt_val=GGt_val, isNYSE=isNYSE, use_close=use_close, to_sek=to_sek)
     df <- process_multiple(df, stop_loss, sell_dev, buy_dev, courtage)
     name_list_str <- paste0(name_list, sep='', collapse='-')
     write.csv(df, str_glue('csvs/{name_list_str}.csv'))
@@ -57,9 +57,9 @@ get_sample_profit <- function(name_list, HHt_val, GGt_val,
 highest <- -999
 
 my_optim <- function(par, k, name_list, courtage, isNYSE, min_sample_length, 
-max_sample_length) {
+max_sample_length, use_close, to_sek) {
   
-  opt_results_file <- str_glue("opt_results_courtage_{courtage}_nyse_{isNYSE}.rds")
+  opt_results_file <- str_glue("opt_results_courtage_{courtage}_nyse_{isNYSE}_use_close_{use_close}.rds")
 
 
   create_not_exist <- function(file_name) {
@@ -93,7 +93,9 @@ max_sample_length) {
     sell_dev=par[4], 
     buy_dev=-par[5], 
     courtage=courtage,
-    isNYSE=isNYSE)
+    isNYSE=isNYSE,
+    use_close=use_close,
+    to_sek=to_sek)
   df_weight <- data.frame(name=unlist(name_list), weight=as.numeric(weight_list)) %>%
     filter(weight > 0) %>% arrange(desc(weight))
   print(df_weight)
@@ -111,7 +113,7 @@ max_sample_length) {
   for (sample in perm_samples) {
     sample_str <- paste0(sample, sep='', collapse='-')
     profit <- get_sample_profit(sample, par[1], par[2], par[3], par[4],
-      par[5], courtage, isNYSE)
+      par[5], courtage=courtage, isNYSE=isNYSE, use_close=use_close, to_sek=to_sek)
     if (profit > highest) {
       highest <<- profit
       write_log(str_glue('Find new high: {profit} sample: {sample_str} par:{par_str}'))
@@ -129,8 +131,8 @@ max_sample_length) {
 args = commandArgs(trailingOnly=TRUE)
 print(length(args))
 print(args)
-if (length(args)!=5) {
-  print("Usage: Rscript search_model.r isNYSE courtage n_samples min_sample_length, max_sample_length")
+if (length(args) != 7) {
+  print("Usage: Rscript search_model.r isNYSE courtage n_samples min_sample_length max_sample_length use_close to_sek")
   quit()
 }
 
@@ -139,13 +141,17 @@ courtage <- as.numeric(args[2])
 k <- as.numeric(args[3])
 min_sample_length <- as.numeric(args[4])
 max_sample_length <- as.numeric(args[5])
+use_close = as.logical(as.numeric(args[6]))
+to_sek = as.logical(as.numeric(args[7]))
+
 
 print(isNYSE)
 print(courtage)
+print(str_glue('use_close={use_close}'))
 
 write_log <- function(text) {
   market <- if(isNYSE) 'nyse' else 'omx'
-  log_file <- str_glue("my_log_{market}_{courtage}.txt")
+  log_file <- str_glue("my_log_{market}_{courtage}_{use_close}.txt")
   text <- paste(Sys.time(), text)
   write(text,file=log_file,append=TRUE)
 }
@@ -155,6 +161,7 @@ file_list <- list.files(str_glue('./{data_dir}'))
 name_list <- str_replace_all(file_list, '\\.rds','')
 fit <- optim(par=c(0.08, 0.08, 0.70, 0.05, -0.01), function(par)
    -my_optim(par, k, name_list=name_list, courtage=courtage, 
-    isNYSE=isNYSE, min_sample_length=min_sample_length, max_sample_length=max_sample_length),
+    isNYSE=isNYSE, min_sample_length=min_sample_length, max_sample_length=max_sample_length, 
+    use_close=use_close, to_sek=to_sek),
    control=list(maxit=800, parscale=c(1, 1, 10, 1, 1)))
 fit

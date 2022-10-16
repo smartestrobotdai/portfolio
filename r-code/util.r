@@ -41,10 +41,15 @@ ema <- function(df, n, beta) {
   return(df)
 }
 
-kalman <- function(df, HHt_val, GGt_val, predict=FALSE) {
+kalman <- function(df, HHt_val, GGt_val, predict=FALSE, use_close=FALSE) {
   df$mean <- (df$high + df$low)/2
   # kalman filter should accept the original number instead of log.
-  y <- as.numeric((exp(1)**df$mean))
+  if (use_close) {
+    y <- as.numeric(exp(1)**df$close)
+  } else {
+    y <- as.numeric(exp(1)**df$mean)
+  }
+
   dt <- ct <- matrix(0)
   Tt <- matrix(1) # nolint
   a0 <- y[1] # Estimation of the first year flow
@@ -264,16 +269,19 @@ data_filter <- function(df, start_date, end_date=NULL) {
 
 g_sek_df = NULL
 data_prep <- function(stock_name, start_date='2007-01-01', 
-  end_date="2022-09-30", HHt_val=NULL, GGt_val=NULL, predict=FALSE, isNYSE=TRUE) {
+  end_date="2022-09-30", HHt_val=NULL, GGt_val=NULL, predict=FALSE, isNYSE=TRUE, 
+  use_close=FALSE, to_sek=TRUE) {
+  if (stock_name == 'SEK=X') {
+    data_dir = 'sek'
+    stock_name = 'SEK.X'
+  } else {
+    data_dir <- if (isNYSE) 'data' else 'omx'
+  }
   
-  data_dir <- if (isNYSE) 'data' else 'omx'
   if (predict) {
-    end_date = NULL
-    sek_df <- get_sek_usd(predict=TRUE)  
     df <- data.frame(getSymbols(stock_name, src='yahoo', auto.assign=FALSE))
     df <- df %>% data_filter(start_date, NULL)
   } else {
-    sek_df <- get_sek_usd()
     df <- data.frame(readRDS(file=str_glue('{data_dir}/{stock_name}.rds')))
     df <- df %>% data_filter(start_date, end_date)
   }
@@ -282,7 +290,8 @@ data_prep <- function(stock_name, start_date='2007-01-01',
 
   # remove NA
   df <- df %>% filter(!is.na(close))
-  if (isNYSE) {
+  if (to_sek) {
+    sek_df = get_sek_usd(predict=predict)
     df <- left_merge_with_rowname(df, sek_df)
     df$SEK.X.Mean <- na.approx(df$SEK.X.Mean)
     df[,1:4] <- df[,1:4] * df$SEK.X.Mean
@@ -294,7 +303,7 @@ data_prep <- function(stock_name, start_date='2007-01-01',
     mutate(last_close=shift(close), no_model_profit=c(0, diff(close)))
   df$last_close[1] <- df$open[1]
   if (predict) {
-    at <- kalman(df, HHt_val, GGt_val, predict=TRUE)
+    at <- kalman(df, HHt_val, GGt_val, predict=TRUE, use_close=use_close)
     print(str_glue('dim(at): {dim(at)[1]}, nrow(df): {nrow(df)}'))
     stopifnot(length(at) == nrow(df) + 1)
     last_date <- rownames(tail(df, 1))
@@ -304,7 +313,7 @@ data_prep <- function(stock_name, start_date='2007-01-01',
   }
 
   if (!is.null(HHt_val) && !is.null(GGt_val)) {
-    df <- kalman(df, HHt_val, GGt_val)
+    df <- kalman(df, HHt_val, GGt_val, use_close=use_close)
   }
   return(df)
 }
@@ -343,10 +352,10 @@ process_one <- function(df,
   return(df)
 }
 
-data_prep_multiple <- function(name_list, HHt_val, GGt_val, isNYSE) {
+data_prep_multiple <- function(name_list, HHt_val, GGt_val, isNYSE, use_close=FALSE, to_sek=TRUE) {
   helper <- function(all, name) {
     df <- data_prep(name, HHt_val=HHt_val, GGt_val=GGt_val,
-      isNYSE=isNYSE)
+      isNYSE=isNYSE, use_close=use_close)
     
     colnames(df) <- paste(name, colnames(df), sep='.')
     merge_with_rowname(all, df)

@@ -25,6 +25,8 @@ for (name in securities) {
 
 cur_time <- Sys.time()
 output <- list(last_update_time=as.character(cur_time), 
-  securities_states=securitie_states)
-  
-write(toJSON(output), str_glue("{dir}/state.json"))
+  security_states=securitie_states)
+
+outfile <- str_glue("{dir}/state.json")
+out = file(outfile, 'w')
+write(toJSON(output), out)
