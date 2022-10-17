@@ -49,11 +49,13 @@ get_sample_profit <- function(name_list, HHt_val, GGt_val,
     df <- data_prep_multiple(name_list, HHt_val=HHt_val, GGt_val=GGt_val, isNYSE=isNYSE, use_close=use_close, to_sek=to_sek)
     df <- process_multiple(df, stop_loss, sell_dev, buy_dev, courtage)
     name_list_str <- paste0(name_list, sep='', collapse='-')
+    
+    df <- df %>% mutate(id=row_number())
     write.csv(df, str_glue('csvs/{name_list_str}.csv'))
     if (monthly_limit > 0) {
       df <- filter_with_monthly_limit(df, monthly_limit)    
     }
-    df <- df %>% mutate(id=row_number())
+    
     my_summary <- df %>% mutate(range=cut(id, seq(0, max(id)+252, 252))) %>% 
       group_by(range) %>% summarise(sum=sum(trade_profit))
     mean(my_summary$sum) - 0.5 * sd(my_summary$sum)
