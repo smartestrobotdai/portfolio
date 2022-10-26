@@ -76,7 +76,7 @@ max_sample_length, use_close, to_sek, monthly_limit) {
   par_str <- paste0(par, sep='', collapse='-')
   log_file_name <- get_log_file_name()
   opt_results_file <- str_glue("{log_file_name}.rds")
-  write_log(str_glue('Starting calculating weights: par:{par_str}'))
+
   create_not_exist <- function(file_name) {
     if(!file.exists(opt_results_file)) {
       opt_list <- list()
@@ -99,18 +99,17 @@ max_sample_length, use_close, to_sek, monthly_limit) {
 
   stop_loss = par[3]
   if (stop_loss >= 1) {
-    write_log(str_glue('warning: stop_loss: {stop_loss} bigger than or equal to 1'))
-    value = 0
-    put_opt_result(par_str, value)
-    write_log(str_glue('par: {par_str}: finished, value={value}'))
+    write_log(str_glue('warning: {par_str} stop_loss: {stop_loss} bigger than or equal to 1, value=0'))
     return(0)
   }
 
   value <- get_opt_result(par_str)
   if (!is.null(value)) {
+    write_log(str_glue('{par_str}: get result from cache: {value}'))
     return(value)
   }
 
+  write_log(str_glue('Starting calculating weights: par:{par_str}'))
   weight_list <- lapply(name_list, get_prob_weight, HHt_val=par[1], GGt_val=par[2],
     stop_loss=par[3], 
     sell_dev=par[4], 
