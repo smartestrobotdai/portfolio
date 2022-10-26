@@ -72,20 +72,9 @@ highest <- -999
 
 my_optim <- function(par, k, name_list, courtage, isNYSE, min_sample_length, 
 max_sample_length, use_close, to_sek, monthly_limit) {
-
-  stop_loss = par[3]
-  if (stop_loss >= 1) {
-    write_log(str_glue('warning: stop_loss: {stop_loss} bigger than or equal to 1'))
-    par_str <- paste0(par, sep='', collapse='-')
-    value = 0
-    put_opt_result(par_str, value)
-    write_log(str_glue('par: {par_str}: finished, value={value}'))
-    return(0)
-  }
+  par_str <- paste0(par, sep='', collapse='-')
   log_file_name <- get_log_file_name()
   opt_results_file <- str_glue("{log_file_name}.rds")
-
-
   create_not_exist <- function(file_name) {
     if(!file.exists(opt_results_file)) {
       opt_list <- list()
@@ -106,7 +95,15 @@ max_sample_length, use_close, to_sek, monthly_limit) {
     return(opt_list[[par_str]])
   }
 
-  par_str <- paste0(par, sep='', collapse='-')
+  stop_loss = par[3]
+  if (stop_loss >= 1) {
+    write_log(str_glue('warning: stop_loss: {stop_loss} bigger than or equal to 1'))
+    value = 0
+    put_opt_result(par_str, value)
+    write_log(str_glue('par: {par_str}: finished, value={value}'))
+    return(0)
+  }
+
   value <- get_opt_result(par_str)
   if (!is.null(value)) {
     return(value)
