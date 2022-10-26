@@ -72,9 +72,11 @@ highest <- -999
 
 my_optim <- function(par, k, name_list, courtage, isNYSE, min_sample_length, 
 max_sample_length, use_close, to_sek, monthly_limit) {
+  
   par_str <- paste0(par, sep='', collapse='-')
   log_file_name <- get_log_file_name()
   opt_results_file <- str_glue("{log_file_name}.rds")
+  write_log(str_glue('Starting calculating weights: par:{par_str}'))
   create_not_exist <- function(file_name) {
     if(!file.exists(opt_results_file)) {
       opt_list <- list()
@@ -108,7 +110,7 @@ max_sample_length, use_close, to_sek, monthly_limit) {
   if (!is.null(value)) {
     return(value)
   }
-  write_log(str_glue('Starting calculating weights: par:{par[1]}, {par[2]}, {par[3]}, {par[4]}, {par[5]}'))
+
   weight_list <- lapply(name_list, get_prob_weight, HHt_val=par[1], GGt_val=par[2],
     stop_loss=par[3], 
     sell_dev=par[4], 
