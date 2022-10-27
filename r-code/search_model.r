@@ -1,4 +1,5 @@
 library(stringr)
+library(doParallel)
 source('./util.r')
 
 
@@ -51,7 +52,7 @@ get_sample_profit <- function(name_list, HHt_val, GGt_val,
     name_list_str <- paste0(name_list, sep='', collapse='-')
     
     df <- df %>% mutate(id=row_number())
-    write.csv(df, str_glue('csvs/{name_list_str}.csv'))
+    #write.csv(df, str_glue('csvs/{name_list_str}.csv'))
     if (monthly_limit > 0) {
       df <- filter_with_monthly_limit(df, monthly_limit)    
     }
@@ -71,7 +72,7 @@ get_log_file_name <- function() {
 highest <- -999
 
 my_optim <- function(par, k, name_list, courtage, isNYSE, min_sample_length, 
-max_sample_length, use_close, to_sek, monthly_limit) {
+max_sample_length, use_close, to_sek, monthly_limit, core_number) {
   
   par_str <- paste0(par, sep='', collapse='-')
   log_file_name <- get_log_file_name()
@@ -130,32 +131,32 @@ max_sample_length, use_close, to_sek, monthly_limit) {
   
   n_sample_len <- min(n_positive, max_sample_length)
   perm_samples <- make_samples(df_weight$name, n_sample_len, k, df_weight$weight)
-  profits <- c()
+
+  
   write_log('Calculating weights completed')
-  for (sample in perm_samples) {
-    sample_str <- paste0(sample, sep='', collapse='-')
+  profits <- foreach (sample = perm_samples) %dopar%{
     profit <- get_sample_profit(sample, par[1], par[2], par[3], par[4],
       par[5], courtage=courtage, isNYSE=isNYSE, use_close=use_close, to_sek=to_sek,
       monthly_limit=monthly_limit)
 
     # calculate the reversed profit
     rev_sample = rev(sample)
-    rev_sample_str = paste0(rev_sample, sep='', collapse='-')
     rev_profit <- get_sample_profit(rev_sample, par[1], par[2], par[3], par[4],
       par[5], courtage=courtage, isNYSE=isNYSE, use_close=use_close, to_sek=to_sek,
       monthly_limit=monthly_limit)
 
-    avg_profit = (profit + rev_profit) / 2
-    if (avg_profit > highest) {
-      highest <<- avg_profit
-      write_log(str_glue('Find new high 2-way avg profit: {avg_profit} sample: {sample_str} par:{par_str}'))
-    } else {
-      # delete csv file
-      file.remove(str_glue('csvs/{sample_str}.csv'))
-      file.remove(str_glue('csvs/{rev_sample_str}.csv'))
-    }
-    profits <- append(profits, avg_profit)
+    (profit + rev_profit) / 2
   }
+
+  profits <- unlist(profits)
+  max_ <- max(profits)
+  index <- match(max_, profits)
+  if (max_ > highest) {
+      highest <<- max_
+      sample_str <- paste0(perm_samples[[index]], sep='', collapse='-')
+      write_log(str_glue('Find new high 2-way avg profit: {max_} sample: {sample_str} par:{par_str}'))
+  }
+
   value <- mean(profits, na.rm=TRUE)
   put_opt_result(par_str, value)
   write_log(str_glue('par: {par_str}: finished, value={value}'))
@@ -165,8 +166,8 @@ max_sample_length, use_close, to_sek, monthly_limit) {
 args = commandArgs(trailingOnly=TRUE)
 print(length(args))
 print(args)
-if (length(args) != 8) {
-  print("Usage: Rscript search_model.r isNYSE courtage n_samples min_sample_length max_sample_length use_close to_sek monthly_limit")
+if (length(args) != 9) {
+  print("Usage: Rscript search_model.r isNYSE courtage n_samples min_sample_length max_sample_length use_close to_sek monthly_limit n_cpu")
   quit()
 }
 
@@ -177,7 +178,16 @@ min_sample_length <- as.numeric(args[4])
 max_sample_length <- as.numeric(args[5])
 use_close = as.logical(as.numeric(args[6]))
 to_sek = as.logical(as.numeric(args[7]))
-monthly_limit = as.numeric((args[8]))
+monthly_limit = as.numeric(args[8])
+n_cpu = as.numeric(args[9])
+if (n_cpu > 1) {
+    my.cluster <- parallel::makeCluster(
+    n_cpu, 
+    type = "FORK"
+  )
+
+  doParallel::registerDoParallel(my.cluster)
+}
 
 print(isNYSE)
 print(courtage)
@@ -193,7 +203,7 @@ write_log <- function(text) {
 data_dir <- if (isNYSE) 'data' else 'omx'
 file_list <- list.files(str_glue('./{data_dir}'))
 name_list <- str_replace_all(file_list, '\\.rds','')
-fit <- optim(par=c(0.08, 0.08, 0.70, 0.05, -0.01), function(par)
+fit <- optim(par=c(0.07, 0.07, 0.80, 0.02, -0.02), function(par)
    -my_optim(par, k, name_list=name_list, courtage=courtage, 
     isNYSE=isNYSE, min_sample_length=min_sample_length, max_sample_length=max_sample_length, 
     use_close=use_close, to_sek=to_sek, monthly_limit=monthly_limit),
