@@ -148,7 +148,7 @@ max_sample_length, use_close, to_sek, monthly_limit) {
     avg_profit = (profit + rev_profit) / 2
     if (avg_profit > highest) {
       highest <<- avg_profit
-      write_log(str_glue('Find new high 2-way avg profit: {profit} sample: {sample_str} par:{par_str}'))
+      write_log(str_glue('Find new high 2-way avg profit: {avg_profit} sample: {sample_str} par:{par_str}'))
     } else {
       # delete csv file
       file.remove(str_glue('csvs/{sample_str}.csv'))
