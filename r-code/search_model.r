@@ -137,14 +137,24 @@ max_sample_length, use_close, to_sek, monthly_limit) {
     profit <- get_sample_profit(sample, par[1], par[2], par[3], par[4],
       par[5], courtage=courtage, isNYSE=isNYSE, use_close=use_close, to_sek=to_sek,
       monthly_limit=monthly_limit)
-    if (profit > highest) {
-      highest <<- profit
-      write_log(str_glue('Find new high: {profit} sample: {sample_str} par:{par_str}'))
+
+    # calculate the reversed profit
+    rev_sample = rev(sample)
+    rev_sample_str = paste0(rev_sample, sep='', collapse='-')
+    rev_profit <- get_sample_profit(rev_sample, par[1], par[2], par[3], par[4],
+      par[5], courtage=courtage, isNYSE=isNYSE, use_close=use_close, to_sek=to_sek,
+      monthly_limit=monthly_limit)
+
+    avg_profit = (profit + rev_profit) / 2
+    if (avg_profit > highest) {
+      highest <<- avg_profit
+      write_log(str_glue('Find new high 2-way avg profit: {profit} sample: {sample_str} par:{par_str}'))
     } else {
       # delete csv file
       file.remove(str_glue('csvs/{sample_str}.csv'))
+      file.remove(str_glue('csvs/{rev_sample_str}.csv'))
     }
-    profits <- append(profits, profit)
+    profits <- append(profits, avg_profit)
   }
   value <- mean(profits, na.rm=TRUE)
   put_opt_result(par_str, value)

@@ -16,17 +16,20 @@ from websockets import serve
 import websockets
 import pandas as pd
 import numpy as np
+import logging
 
+
+logging.basicConfig(format='%(asctime)s %(message)s', filename='./server.log', encoding='utf-8', level=logging.DEBUG)
 NYSE_HOLIDAYS = ['2022-11-24', '2022-12-26', '2023-01-02', '2023-01-16', 
 '2023-02-20', '2023-04-07', '2023-05-29', '2023-06-19']
 
 NYT = tz.gettz('America/New_York')
-
-
+current_buy = None
 
 ticks=[]
 client_websockets = []
 df_state_last_update_time = datetime.datetime.now()
+df_state_last_print_time = datetime.datetime.now()
 
 async def set_periodic_task(recur_time, callback):
   
@@ -72,7 +75,7 @@ def get_valid_securities():
     if valid:
       security_dict[security_name] = states
     else:
-      print(f'Validating {security_name} Failed: last_data_date:{last_data_date}, last_b_date: {last_b_date} today_date: {today_date}')
+      logging.info(f'Validating {security_name} Failed: last_data_date:{last_data_date}, last_b_date: {last_b_date} today_date: {today_date}')
   return security_dict
   
 def get_security_names():
@@ -87,10 +90,10 @@ async def send_msg_to_all(id, point, operation):
   str_to_send = json.dumps(obj_to_send)
   for websocket in client_websockets:
     try:
-      print(f'send data to {websocket}')
+      logging.info(f'send data to {websocket}')
       await websocket.send(str_to_send)
     except websockets.exceptions.ConnectionClosed:
-      print("Client disconnected.  Do cleanup")
+      logging.info("Client disconnected.  Do cleanup")
       websockets_to_remove.append(websocket)
       continue
   for websocket in websockets_to_remove:
@@ -98,24 +101,29 @@ async def send_msg_to_all(id, point, operation):
 
 def update_df_state(df_state, id, new_state, price):
   global df_state_last_update_time
+  global df_state_last_print_time
   now = datetime.datetime.now()
   pd_now = pd.Timestamp.now()
   if (now - df_state_last_update_time).seconds > 10:
-    cond = (pd_now - df_state['update_time']).dt.total_seconds() > 120
-    df_state[cond]['state'] = 'timeout'
-    df_state[cond]['update_time'] = pd_now
+    cond = (pd_now - df_state['update_time']).dt.total_seconds() > 300
+    df_state.loc[cond, 'state'] = 'timeout'
+    df_state.loc[cond, 'update_time'] = pd_now
+    df_state.loc[cond, 'state_change_time'] = pd_now
     df_state_last_update_time = now
-    print(df_state)
 
-  if df_state.loc[id, 'state'] != new_state:
+  if (now - df_state_last_print_time).seconds > 600:
+    logging.info(df_state)
+    df_state_last_print_time = now
+
+  old_state = df_state.loc[id, 'state']
+  if old_state != new_state:
+    logging.info(f'Status changed: {id} from {old_state} to {new_state}, price: {price}')
     df_state.loc[id, 'state'] = new_state
     df_state.loc[id, 'state_change_time'] = pd_now
 
   df_state.loc[id, 'update_time'] = pd_now
   df_state.loc[id, 'price'] = price
 
-  if new_state == 'buy':
-    df_state.loc[id, 'buy_count'] = df_state.loc[id, 'buy_count'] + 1
   
   return df_state
 
@@ -151,10 +159,10 @@ async def check_msg(data, df_state):
       "priceHint": my_yaticker.priceHint
   }
 
-  #print(data_str)
+  #logging.info(data_str)
   id = data['id']
   if not id in df_state['name']:
-    print(f'{id} not in security_list, please check')
+    logging.info(f'{id} not in security_list, please check')
     return None
 
   row = df_state.loc[id]
@@ -165,24 +173,30 @@ async def check_msg(data, df_state):
 
 
   if price < buy_point:
+    global current_buy
     df_state = update_df_state(df_state, id, 'buy', price)
     # need to check if there is no buy request in higher prio
     if should_buy(df_state, id, prio):
       await send_msg_to_all(id, buy_point, 'buy')
-      print(f'Buy {id} at {price}, buy_point: {buy_point}')
+      if current_buy != id:
+        logging.info(f'Buy {id} at {price}, buy_point: {buy_point}')
+        current_buy = id
   elif price > sell_point:
     df_state = update_df_state(df_state, id, 'sell', price)
     await send_msg_to_all(id, sell_point, 'sell')
-    print(f'Sell {id} at {price}, sell_point: {sell_point}')
+    #logging.info(f'Sell {id} at {price}, sell_point: {sell_point}')
   else:
     df_state = update_df_state(df_state, id, 'normal', price)
+    if current_buy == id:
+      logging.info(f'Stop Buying {id} at {price}, buy_point: {buy_point}')
+      current_buy = None
 
 async def send_request(name_list, ws):
   symbol_list = dict()
   symbol_list["subscribe"] = name_list
   send_str = json.dumps(symbol_list)
   await ws.send_str(send_str)
-  print(f'data sent: {name_list}')
+  logging.info(f'data sent: {name_list}')
 
 def get_state_file_name():
   last_workday_nyse = get_last_workday_nyse()
@@ -193,15 +207,13 @@ def validate_model_date():
 
 
 async def echo(websocket):
-  print('echo:....')
-
   client_websockets.append(websocket)
   async for message in websocket:
-    print(message)
+    logging.info(message)
     await websocket.send(message)
 
 async def init_server():
-  print('initialize server')
+  logging.info('initialize server')
   async with serve(echo, None, 8766) as target:
     await asyncio.Future()
 
@@ -230,25 +242,27 @@ def create_df_state(security_dict):
   df_state['update_time'] = pd.Timestamp.now()
   df_state['prio'] = np.arange(len(df_state))
   df_state['price'] = 0
-  df_state['buy_count'] = 0
   df_state['buy_delay'] = np.arange(0, 14400, 450)
   df_state['state_change_time'] = pd.Timestamp.now()
   return df_state
 
 async def main():
-  print('validate model state')
+
+
+
+  logging.info('validate model state')
   valid = validate_model_date()
   if not valid:
-    print('Validating file failed, exiting...')
+    logging.info('Validating file failed, exiting...')
     exit(1)
   security_dict = get_valid_securities()
   if len(security_dict) < 1:
-    print('no valid stock id found')
+    logging.info('no valid stock id found')
     exit(1)
 
   df_state = create_df_state(security_dict)
-  print(df_state)
-  print(df_state.columns)
+  logging.info(df_state)
+  logging.info(df_state.columns)
   asyncio.ensure_future(init_client(df_state))
   await init_server()
 
