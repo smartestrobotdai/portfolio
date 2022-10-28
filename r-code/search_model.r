@@ -66,7 +66,7 @@ get_sample_profit <- function(name_list, HHt_val, GGt_val,
 
 
 get_log_file_name <- function() {
-  str_glue("opt_results_courtage_{courtage}_nyse_{isNYSE}_use_close_{use_close}_limit_{monthly_limit}")
+  str_glue("opt_results_courtage_{courtage}_nyse_{isNYSE}_{min_sample_length}_{max_sample_length}_use_close_{use_close}_limit_{monthly_limit}")
 }
 
 highest <- -999
