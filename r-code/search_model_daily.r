@@ -98,9 +98,16 @@ my_optim <- function(par, name_list, courtage, isNYSE, use_close, to_sek,
     return(opt_list[[par_str]])
   }
 
-  stop_loss = par[3]
-  if (stop_loss >= 1) {
-    write_log(str_glue('warning: {par_str} stop_loss: {stop_loss} bigger than or equal to 1, value=0'))
+  stop_loss <- par[3]
+  if (stop_loss >= 1 || stop_loss <= 0) {
+    write_log(str_glue('warning: {par_str}, check failed: 0 <= {stop_loss} <= 1, value=0'))
+    return(0)
+  }
+  
+  sell_dev <- par[4]
+  buy_dev <- par[5]
+  if (sell_dev < buy_dev) {
+    write_log(str_glue('warning: {par_str}, check failed: sell_dev > buy_dev, value=0'))
     return(0)
   }
 
@@ -130,7 +137,8 @@ my_optim <- function(par, name_list, courtage, isNYSE, use_close, to_sek,
   put_opt_result(par_str, avg_daily)
   write_log(str_glue('par: {par_str}: finished, avg_daily={avg_daily}'))
   
-  return(avg_daily)
+  # A small panelty is added for stop loss.
+  return(avg_daily + 0.0001 * log(stop_loss))
 }
 
 args = commandArgs(trailingOnly=TRUE)

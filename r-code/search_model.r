@@ -99,8 +99,8 @@ max_sample_length, use_close, to_sek, monthly_limit, core_number) {
   }
 
   stop_loss = par[3]
-  if (stop_loss >= 1) {
-    write_log(str_glue('warning: {par_str} stop_loss: {stop_loss} bigger than or equal to 1, value=0'))
+  if (stop_loss >= 1 || stop_loss <= 0) {
+    write_log(str_glue('warning: {par_str}, check failed: 0 <= {stop_loss} <= 1, value=0'))
     return(0)
   }
 
