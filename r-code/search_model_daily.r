@@ -32,8 +32,10 @@ get_prob_weight <- function(name, HHt_val, GGt_val,
   stop_loss, sell_dev, buy_dev, courtage, isNYSE, use_close, to_sek) {
     df <- data_prep(name, HHt_val=HHt_val, GGt_val=GGt_val, isNYSE=isNYSE, use_close=use_close, to_sek=to_sek)
     df <- process_one(df, stop_loss, sell_dev, buy_dev, courtage)
+
     my_summary <- df %>% filter(trade_profit != 0 | hold != 0) %>% summarise(sum=sum(trade_profit), n=n(), daily=sum/n)
-    my_summary$daily
+    no_model_summary <- df %>% summarise(sum=sum(no_model_profit), n=n(), daily=sum/n)
+    my_summary$daily - no_model_summary$daily
 }
 
 filter_with_monthly_limit <- function(df, monthly_limit) {
@@ -129,12 +131,12 @@ my_optim <- function(par, name_list, courtage, isNYSE, use_close, to_sek,
     use_close=use_close,
     to_sek=to_sek)
   }
-  avg_daily <- mean(unlist(weight_list))
-  sd_daily <- sd(unlist(weight_list))
-  value <- (avg_daily + 0.0001 * log(stop_loss)) / sd_daily
+  avg_daily_gain <- mean(unlist(weight_list))
+  sd_daily_gain <- sd(unlist(weight_list))
+  value <- (avg_daily_gain + 0.00001 * log(stop_loss)) / sd_daily_gain
   if (value > highest) {
     highest <<- value
-    write_log(str_glue('Find new high: mean: {avg_daily}, sd:{sd_daily} value: {value} par:{par_str}'))
+    write_log(str_glue('Find new high: mean: {avg_daily_gain}, sd:{sd_daily_gain} value: {value} par:{par_str}'))
   }
 
   put_opt_result(par_str, value)
