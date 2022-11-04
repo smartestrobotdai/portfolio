@@ -14,6 +14,7 @@ for (security in securities) {
   GGt <- security[['GGt']]
   sell <- security[['sell']]
   buy <- security[['buy']]
+  stop <- security[['stop']]
   use_close <- as.numeric(security[['use-close']])
   to_sek <- as.numeric(security[['to-sek']])
   isNYSE <- as.numeric(security[['market']] == 'NYSE')
@@ -31,9 +32,10 @@ for (security in securities) {
   predict <- exp(1)**predict
   buy_point <- exp(1)**buy_point
   sell_point <- exp(1)**sell_point
+  stop_loss <- stop
   securitie_states <- append(securitie_states, list(list(id=id,
     last_data_date=last_data_date, 
-    predict=predict, buy_point=buy_point, sell_point=sell_point)))
+    predict=predict, buy_point=buy_point, sell_point=sell_point, stop_loss=stop_loss)))
 }
 
 cur_time <- Sys.time()

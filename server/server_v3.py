@@ -69,14 +69,18 @@ def get_security_names():
     desc = json.load(f)
     return desc['securities']
 
-async def send_msg_to_all(id, point, operation):
+async def send_msg_to_all(id, point, price, operation, stop_loss):
   global client_websockets
   websockets_to_remove = []
-  obj_to_send = {"id": id, "point": point, "operation": operation}
+  if stop_loss:
+    obj_to_send = {"id": id, "point": point, "price": price, "operation": operation, "stop_loss": stop_loss}
+  else:
+    obj_to_send = {"id": id, "point": point, "price": price, "operation": operation}
+
   str_to_send = json.dumps(obj_to_send)
   for websocket in client_websockets:
     try:
-      logging.info(f'send data to {websocket}')
+      #logging.info(f'send data to {websocket}')
       await websocket.send(str_to_send)
     except websockets.exceptions.ConnectionClosed:
       logging.info("Client disconnected.  Do cleanup")
@@ -132,13 +136,15 @@ async def check_msg(data):
   states = security_state[index]
   buy_point = states['buy_point']
   sell_point = states['sell_point']
+  stop_loss = states['stop_loss']
   price = data['price']
+  
   if price < buy_point:
     update_state(id, 'buy', price)
-    await send_msg_to_all(id, buy_point, 'buy')
+    await send_msg_to_all(id, buy_point, price, 'buy', stop_loss)
   elif price > sell_point:
     update_state(id, 'sell', price)
-    await send_msg_to_all(id, sell_point, 'sell')
+    await send_msg_to_all(id, sell_point, price, 'sell')
   else:
     update_state(id, 'normal', price)
 
