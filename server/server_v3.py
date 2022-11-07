@@ -11,7 +11,6 @@ from pandas.tseries.offsets import BDay
 import aiohttp
 from yticker_pb2 import yaticker
 import base64
-import random
 from websockets import serve
 import websockets
 import pandas as pd
