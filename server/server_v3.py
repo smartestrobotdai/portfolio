@@ -68,7 +68,7 @@ def get_security_names():
     desc = json.load(f)
     return desc['securities']
 
-async def send_msg_to_all(id, point, price, operation, stop_loss):
+async def send_msg_to_all(id, point, price, operation, stop_loss=None):
   global client_websockets
   websockets_to_remove = []
   if stop_loss:
