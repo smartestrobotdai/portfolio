@@ -42,7 +42,7 @@ ema <- function(df, n, beta) {
 }
 
 kalman <- function(df, HHt_val, GGt_val, predict=FALSE, use_close=FALSE) {
-  df$mean <- (df$high + df$low)/2
+  
   # kalman filter should accept the original number instead of log.
   if (use_close) {
     y <- as.numeric(exp(1)**df$close)
@@ -144,30 +144,36 @@ append_colname <- function(df, name) {
   return(df)
 }
 
+
+
 # the most important function! test carefully!
 get_daily_profit <- function(open, close, high, low, last_close, predict, 
-  stop_loss, last_buy_price, sell_deviation, 
+  log_stop_loss, last_buy, sell_deviation, 
   buy_deviation, hold, courtage_log) {
   
+  if (log_stop_loss >= 0) {
+    print(str_glue('invalid log_stop_log, must be less then 0, {log_stop_loss}'))
+    log_stop_loss <- -0.001
+  }
+
   profit <- 0
   #print(str_glue('close: {close} open: {open}'))
   up <- close > open
-  log_stop_loss <- log(stop_loss)  # always negative
-  low_stop_loss_threshold <- last_buy_price + log_stop_loss
+  low_stop_loss_threshold <- last_buy + log_stop_loss
   high_sell_threshold <- predict + sell_deviation
   low_buy_threshold <- predict + buy_deviation
   trade_times <- 0
 
   buy <- function(price) {
     trade_times <<- trade_times + 1
-    last_buy_price <<- price
-    low_stop_loss_threshold <<- last_buy_price + log_stop_loss
+    last_buy <<- price
+    low_stop_loss_threshold <<- last_buy + log_stop_loss
     hold <<- TRUE
   }
 
   sell <- function(price) {
     trade_times <<- trade_times + 1
-    last_buy_price <<- 0
+    last_buy <<- 0
     hold <<- FALSE
   }
 
@@ -196,7 +202,7 @@ get_daily_profit <- function(open, close, high, low, last_close, predict,
             sell(low_stop_loss_threshold)
             profit <- profit + log_stop_loss
           } else {
-            profit <- profit + close - last_buy_price
+            profit <- profit + close - last_buy
           }
         }
       } else if (low < low_stop_loss_threshold) {
@@ -216,10 +222,10 @@ get_daily_profit <- function(open, close, high, low, last_close, predict,
           sell(low_stop_loss_threshold)
           profit <- log_stop_loss
         } else if(high > high_sell_threshold) {
-          profit <- high_sell_threshold - last_buy_price
+          profit <- high_sell_threshold - last_buy
           sell(high_sell_threshold)
         } else {
-          profit <- profit + close - last_buy_price
+          profit <- profit + close - last_buy
         }
       }
     } else {
@@ -231,14 +237,34 @@ get_daily_profit <- function(open, close, high, low, last_close, predict,
           profit <-
             profit + log_stop_loss
         } else {
-          profit <- profit + close - last_buy_price
+          profit <- profit + close - last_buy
         }
       }
     }
   }
 
   profit <- profit + trade_times * courtage_log
-  return(c(profit, trade_times, hold, last_buy_price))
+  return(c(profit, trade_times, hold, last_buy))
+}
+
+
+# the most important function! test carefully!
+# this is the second version, not use log, but real price.
+get_daily_profit_price <- function(open, close, high, low, last_close, predict, 
+  stop_loss, last_buy_price, sell_deviation_price, 
+  buy_deviation_price, hold, courtage) {
+  sell_deviation <- log((predict + sell_deviation_price) / predict)
+  buy_deviation <- log((predict + buy_deviation_price) / predict)
+  result <- get_daily_profit(open=log(open), close=log(close), high=log(high), 
+    low=log(low), last_close=log(last_close), predict=log(predict), log_stop_loss=log(stop_loss), last_buy=log(last_buy_price),
+    sell_deviation=sell_deviation, buy_deviation=buy_deviation, hold, courtage_log=log(1-courtage))
+
+  # convert last_buy from log to real price
+  result[4] <- if (result[4] > 0) exp(1) ** result[4] else 0
+
+  # profit
+  result[1] <- exp(1) ** result[1] - 1
+  return(result)
 }
 
 get_sek_usd <- function(predict=FALSE, mean_only=TRUE) {
@@ -269,16 +295,30 @@ data_filter <- function(df, start_date, end_date=NULL) {
 }
 
 
+data_prep_2 <- function(stock_name, start_date='2007-01-01', end_date="2022-09-30") {
+  df <- data.frame(readRDS(file=str_glue('data/{stock_name}.rds')))
+  df <- df %>% data_filter(start_date, end_date)
+  df <- df %>% set_colnames(c('open', 'high', 'low', 'close', 'volume', 'adjusted')) %>% 
+    mutate(last_close=shift(close))
+  return(df)
+}
+
 g_sek_df = NULL
 data_prep <- function(stock_name, start_date='2007-01-01', 
   end_date="2022-09-30", HHt_val=NULL, GGt_val=NULL, predict=FALSE, isNYSE=TRUE, 
-  use_close=FALSE, to_sek=TRUE) {
+  use_close=FALSE, to_sek=FALSE, reload=FALSE) {
   data_dir <- if (isNYSE) 'data' else 'omx'
   if (predict) {
     df <- data.frame(getSymbols(stock_name, src='yahoo', auto.assign=FALSE))
     df <- df %>% data_filter(start_date, NULL)
   } else {
-    df <- data.frame(readRDS(file=str_glue('{data_dir}/{stock_name}.rds')))
+    if (reload) {
+      data <- getSymbols(stock_name,src='yahoo',auto.assign=FALSE)
+      saveRDS(data, file=str_glue('{data_dir}/{stock_name}.rds'))
+    }
+    #df <- data.frame(readRDS(file=str_glue('{data_dir}/{stock_name}.rds')))
+    #df <- data.frame(readRDS(file=paste0('{data_dir}/{stock_name}.rds')))
+    df <- data.frame(readRDS(file=paste0(data_dir, '/', stock_name, '.rds')))
     df <- df %>% data_filter(start_date, end_date)
   }
 
@@ -292,7 +332,7 @@ data_prep <- function(stock_name, start_date='2007-01-01',
     df[,1:4] <- df[,1:4] * df$SEK.X.Mean
     df <- df %>% select(-last_col())
   }
-
+  df$mean <- (df$low + df$high) / 2
   df <- log(df)
   df <- df  %>% 
     mutate(last_close=shift(close), no_model_profit=c(0, diff(close)))
@@ -313,8 +353,44 @@ data_prep <- function(stock_name, start_date='2007-01-01',
   return(df)
 }
 
-process_one <- function(df, 
+process_one_price <- function(df, 
   stop_loss, sell_dev, buy_dev, courtage) {
+  test <- function(acc, row, stop_loss, sell_dev, 
+      buy_dev, courtage) {
+    open <- row$open
+    high <- row$high
+    low <- row$low
+    close <- row$close
+    last_close <- row$last_close
+    predict <- row$predict
+    hold <- acc[3]
+    last_buy_price <- acc[4]
+    results <- get_daily_profit_price(open, close, high, low, last_close, predict, 
+      stop_loss, last_buy_price, sell_dev, 
+      buy_dev, hold, courtage)
+    return(c(results))
+  }
+  
+  # init value: c(hold, last_buy_price)
+  df_list <- split(df, seq(nrow(df)))
+  appendix <- Reduce(function(acc, row) test(acc, row, stop_loss, 
+                               sell_dev, 
+                               buy_dev, 
+                              courtage), df_list, init=c(0, 0, 0, 0), accumulate=TRUE)
+  # discard the first row which is the init value
+  appendix <- tail(appendix, -1)
+  trade_profit <- as.numeric(lapply(appendix, '[[', 1))
+  df$trade_profit <- trade_profit
+  df$trade_profit_log <- log(1 + trade_profit)
+  df$trade_times <- as.numeric(lapply(appendix, '[[', 2))
+  df$hold <- as.numeric(lapply(appendix, '[[', 3))
+  df$last_buy_price <- as.numeric(lapply(appendix, '[[', 4))
+  return(df)
+}
+
+
+process_one <- function(df, 
+  stop_loss_log, sell_dev, buy_dev, courtage_log) {
   test <- function(acc, row, stop_loss, sell_dev, 
       buy_dev, courtage_log) {
     open <- row$open
@@ -326,12 +402,11 @@ process_one <- function(df,
     hold <- acc[3]
     last_buy_price <- acc[4]
     results <- get_daily_profit(open, close, high, low, last_close, predict, 
-      stop_loss, last_buy_price, sell_dev, 
+      stop_loss_log, last_buy_price, sell_dev, 
       buy_dev, hold, courtage_log)
     return(c(results))
   }
   
-  courtage_log <- log(1 - courtage)
   # init value: c(hold, last_buy_price)
   df_list <- split(df, seq(nrow(df)))
   appendix <- Reduce(function(acc, row) test(acc, row, stop_loss, 
@@ -445,3 +520,67 @@ process_multiple <- function(df, stop_loss, sell_dev, buy_dev, courtage) {
 }
 
 
+ekalman <- function(r, q, df, predict=FALSE) {
+    logistG <- function(r, p, t){
+      p * exp(r*t)
+    }
+    
+
+    r <- 0.001
+    deltaT <- 1
+    
+    # Let's create some sample data:
+    # set.seed(12345)
+    # nObs = 250
+    # nu <- rnorm(nObs, mean=0, sd=sqrt(obsVariance)) 
+    # pop <- c(p0, logistG(r, p0, k, (1:(nObs-1))*deltaT)) + nu
+    pop <- df$mean
+    p0 <- pop[1]
+    nObs <- length(pop)
+
+    df <- df %>% mutate(Rate=rep(NA, nObs),
+                           predict=rep(NA,nObs),
+                           SigmaRate=rep(NA,nObs),
+                           SigmaPrice=rep(NA,nObs))
+
+
+    a <- function(x, deltaT){
+      c(r=x[1],
+        logistG(r=x[1], p=x[2], deltaT))
+    }
+    G <- t(c(0, 1))
+
+    # Evolution error
+    Q <- diag(c(0, q))
+    # Observation error
+    R <- r
+    # Prior
+    x <- c(r, p0)
+    Sigma <-  diag(c(0.001, 0.1))
+
+    for(i in 1:nObs) {
+      # Observation
+      xobs <- c(0, pop[i])
+      y <- G %*% xobs
+      # Filter  
+      SigTermInv <- solve(G %*% Sigma %*% t(G) + R)
+      xf <- x + Sigma %*% t(G) %*%  SigTermInv %*% (y - G %*% x)
+      Sigma <- Sigma - Sigma %*% t(G) %*% SigTermInv %*% G %*% Sigma 
+
+      A <- jacobian(a, x=x, deltaT=deltaT)
+      K <- A %*% Sigma %*% t(G) %*% solve(G %*% Sigma %*% t(G) + R)
+      df[i,'Rate'] <- x[1]
+      df[i,'predict'] <- x[2]
+      df[i, 'SigmaPrice'] <- Sigma[2,2]
+      df[i, 'SigmaRate'] <- Sigma[1,1]
+      df[i, 'resid'] <- y - xf[2]
+      # Predict
+      #x <- a(x=xf, deltaT=deltaT) + K %*% (y - G %*% xf)
+      x <- a(x=xf, deltaT=deltaT)
+      #x <- a(x=xf, k=k, deltaT=deltaT)
+      Sigma <- A %*% Sigma %*% t(A) + Q
+    }
+    last_date <- rownames(tail(df, 1))
+    if (predict) c(last_date, unname(x[2])) else df
+    
+}

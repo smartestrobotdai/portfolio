@@ -3,6 +3,8 @@ library(rjson)
 source('util.r')
 dir <- '../models/model1'
 
+
+
 result <- fromJSON(file = str_glue("{dir}/desc.json"))
 securities <- result$securities
 securitie_states <- list()

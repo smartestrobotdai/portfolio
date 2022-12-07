@@ -53,20 +53,15 @@ def validate_date(last_data_date, last_b_date, today_date):
     return last_b_date == last_data_date or today_date == last_data_date
 
 def get_valid_securities():
-  security_dict = {}
   f = open(get_state_file_name())
   state = json.load(f)
   timestamp = datetime.datetime.now(NYT)
   last_b_date = get_last_workday_nyse(timestamp)
   today_date = get_today_nyse(timestamp)
-  security_states = state['security_states']
-  return [s for s in security_states if validate_date(s['last_data_date'], last_b_date, today_date)]
+  securities = state['securities']
+  return [s for s in securities if validate_date(s['last_data_date'], last_b_date, today_date)]
 
-  
-def get_security_names():
-    f = open('../models/model1/desc.json')
-    desc = json.load(f)
-    return desc['securities']
+
 
 async def send_msg_to_all(id, point, price, operation, stop_loss=None):
   global client_websockets
@@ -156,7 +151,7 @@ async def send_request(name_list, ws):
 
 def get_state_file_name():
   last_workday_nyse = get_last_workday_nyse()
-  return f'../models/model1/state-{last_workday_nyse}.json'
+  return f'../models/model3/state-{last_workday_nyse}.json'
 
 def validate_model_date():
   return path.isfile(get_state_file_name())
