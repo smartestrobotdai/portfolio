@@ -18,7 +18,7 @@ import numpy as np
 import logging
 
 security_state = []
-
+model_dir = '../models/model3'
 logging.basicConfig(format='%(asctime)s %(message)s', filename='./server.log', encoding='utf-8', level=logging.INFO)
 NYSE_HOLIDAYS = ['2022-11-24', '2022-12-26', '2023-01-02', '2023-01-16', 
 '2023-02-20', '2023-04-07', '2023-05-29', '2023-06-19']
@@ -52,16 +52,19 @@ def validate_date(last_data_date, last_b_date, today_date):
     # it could be today (i.e. at night)
     return last_b_date == last_data_date or today_date == last_data_date
 
-def get_valid_securities():
-  f = open(get_state_file_name())
-  state = json.load(f)
+def get_valid_securities_to_buy():
+  securities = readSecuritiesFromFile(get_state_file_name())
   timestamp = datetime.datetime.now(NYT)
   last_b_date = get_last_workday_nyse(timestamp)
   today_date = get_today_nyse(timestamp)
-  securities = state['securities']
-  return [s for s in securities if validate_date(s['last_data_date'], last_b_date, today_date)]
+  securities = [{**s, "allow_to_buy": True} for s in securities if validate_date(s['last_data_date'], last_b_date, today_date)]
+  return securities
 
-
+def readSecuritiesFromFile(file_name):
+  f = open(file_name)
+  state = json.load(f)
+  f.close()
+  return state['securities']
 
 async def send_msg_to_all(id, point, price, operation, stop_loss=None):
   global client_websockets
@@ -132,8 +135,9 @@ async def check_msg(data):
   sell_point = states['sell_point']
   stop_loss = states['stop_loss']
   price = data['price']
+  allow_to_buy = data['allow_to_buy']
   
-  if price < buy_point:
+  if price < buy_point and allow_to_buy:
     update_state(id, 'buy', price)
     await send_msg_to_all(id, buy_point, price, 'buy', stop_loss)
   elif price > sell_point:
@@ -149,9 +153,11 @@ async def send_request(name_list, ws):
   await ws.send_str(send_str)
   logging.info(f'data sent: {name_list}')
 
-def get_state_file_name():
-  last_workday_nyse = get_last_workday_nyse()
-  return f'../models/model3/state-{last_workday_nyse}.json'
+def get_state_file_name(work_date = None):
+  if work_date is None:
+    work_date = get_last_workday_nyse()
+
+  return f'{model_dir}/state-{work_date}.json'
 
 def validate_model_date():
   return path.isfile(get_state_file_name())
@@ -185,6 +191,8 @@ async def init_client():
           break
 
 
+
+
 async def main():
   global security_state
   logging.info('validate model state')
@@ -192,10 +200,11 @@ async def main():
   if not valid:
     logging.info('Validating file failed, exiting...')
     exit(1)
-  security_state = get_valid_securities()
+  security_state = get_valid_securities_to_buy()
   if len(security_state) < 1:
     logging.info('no valid id found')
     exit(1)
+
   security_state = [{**s, 'state':'init'} for s in security_state]
   print(security_state)
   logging.info(security_state)

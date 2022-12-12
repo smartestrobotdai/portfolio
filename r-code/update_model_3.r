@@ -4,9 +4,9 @@ library(purrr)
 source('util.r')
 dir <- '../models/model3'
 
+n_days_back <- 10
+n_candidates <- 1
 
-n_candidates <- 30
-max_n_stocks <- 1
 stock_names <- unlist(lapply(list.files('./data'), function(x) gsub(".rds", "", x)))
 
 
@@ -71,6 +71,41 @@ get_no_model_profit_last_year <- function(name) {
     df <- data_prep(name, end_date=NULL, reload=TRUE)
     return(sum(tail(df$no_model_profit, n=272)))
 }
+
+get_ids_past_days <- function(n_days) {
+  files <- list.files(path=dir, pattern="*.json", full.names=TRUE)
+  details <- file.info(files)
+  n_days_back0 <- min(nrow(details), n_days)
+
+  df <- details[with(details, order(as.POSIXct(ctime), decreasing=TRUE))[1:n_days_back0], ]
+  filenames <- unlist(rownames(df))
+  print(filenames)
+  get_ids <- function(filename) {
+    result <- fromJSON(file=filename)
+    sapply(result$securities, function(x) x$id)
+  }
+
+  ids <- unique(unname(unlist(sapply(filenames, get_ids))))
+  print('000')
+  print(ids)
+  return(ids)
+}
+
+add_to_securities <- function(securities, parameters, allow_to_buy) {
+  name <- parameters$name
+  par <- parameters$par
+  df <- data_prep(name, end_date=NULL, reload=TRUE)
+  predict_res <- ekalman(r=par[1], q=par[2], df, predict=TRUE)
+  last_data_date <- predict_res[1]
+  predict <- as.numeric(predict_res[2])
+  sell_point <- predict + par[3]
+  buy_point <- predict + par[4]
+  predict <- exp(1) ** predict
+  sell_point <- exp(1) ** sell_point
+  buy_point <- exp(1) ** buy_point
+  append(securities, list(list(id=name, last_data_date=last_data_date, predict=predict, sell_point=sell_point, 
+    buy_point=buy_point, stop_loss=0.5, allow_to_buy=allow_to_buy)))
+}
                              
 #high_weight <- c('AAPL', 'MSFT', 'AMZN', 'TSLA', 'UNH', 'GOOGL', 'XOM', 'JNJ', 'GOOG', 'JPM', 'NVDA', 'CVX', 'V', 'PG', 'HD', 'LLY', 'MA', 'PFE', 'ABBV', 'BAC', 'MRK', 'PEP', 'KO', 'COST', 'META', 'MCD', 'WMT', 'TMO', 'CSCO', 'DIS', 'AVGO', 'WFC', 'COP', 'ABT', 'BMY', 'ACN', 'DHR', 'VZ', 'NEE', 'LIN', 'CRM', 'TXN', 'AMGN', 'RTX', 'HON', 'PM', 'ADBE', 'CMCSA', 'T')
 #stock_names <- high_weight
@@ -103,21 +138,15 @@ print(str_glue('mean no_model: {mean_no_model}'))
 
 candidate_index <- match(candidates, stock_names)
 results <- readRDS(file="new_parameters_results_name.rds")
-
-profit_list <- unlist(lapply(results[candidate_index], function(x) get_profit_last_year(x$name, x$par)))
-mean_profit_list <- mean(profit_list)
-print(str_glue('mean_profit_list: {mean_profit_list}'))
-
-
-candidates <- candidates[profit_list > 0]
-profit_list <- profit_list[profit_list > 0]
-profit_list_order <- sort(profit_list, index.return=TRUE, decreasing=TRUE)$ix
-candidates <- candidates[profit_list_order]
-candidate_index <- match(candidates, stock_names)
-
-
-print('prioritized:')
+values <- sapply(results[candidate_index], function(x) x$value)
+print('second screen, the profit > 0')
+cond <- values < 0
+candidates <- candidates[cond]
+candidate_index <- candidate_index[cond]
 print(candidates)
+candidates <- candidates[1:n_candidates]
+candidate_index <- candidate_index[1:n_candidates]
+
 
 len <- length(candidates)
 if (!len) {
@@ -125,31 +154,32 @@ if (!len) {
   return(0)
 }
 
-if (len > max_n_stocks) {
-  candidates <- candidates[1:max_n_stocks]
-  candidate_index <- candidate_index[1:max_n_stocks]
-}
+# one with highest profit, another with lowest movavg
+# if (len > max_n_stocks) {
+#   candidates <- candidates[1:max_n_stocks]
+#   candidate_index <- candidate_index[1:max_n_stocks]
+# }
 
+
+# stocks to buy
 securities <- list()
 for (i in seq_along(candidates)) {
-  print(candidate_index)
   idx <- candidate_index[i]
-  name <- results[[idx]]$name
-  print(name)
-  par <- results[[idx]]$par
-  df <- data_prep(name, end_date=NULL, reload=TRUE)
-  predict_res <- ekalman(r=par[1], q=par[2], df, predict=TRUE)
-  print('predict_res')
-  print(predict_res)
-  last_data_date <- predict_res[1]
-  predict <- as.numeric(predict_res[2])
-  sell_point <- predict + par[3]
-  buy_point <- predict + par[4]
-  predict <- exp(1) ** predict
-  sell_point <- exp(1) ** sell_point
-  buy_point <- exp(1) ** buy_point
-  securities <- append(securities, list(list(id=name, last_data_date=last_data_date, predict=predict, sell_point=sell_point, 
-    buy_point=buy_point, stop_loss=0.5)))
+  securities <- add_to_securities(securities, results[[idx]], TRUE)
+}
+
+securities_to_sell <- get_ids_past_days(n_days_back)
+print('111')
+print(securities_to_sell)
+securities_to_sell <- securities_to_sell[!securities_to_sell %in% candidates]
+print('222')
+print(securities_to_sell)
+securities_to_sell_index <- match(securities_to_sell, stock_names)
+
+# stocks to sell
+for (i in seq_along(securities_to_sell)) {
+  idx <- securities_to_sell_index[i]
+  securities <- add_to_securities(securities, results[[idx]], FALSE)
 }
 
 cur_time <- Sys.time()
