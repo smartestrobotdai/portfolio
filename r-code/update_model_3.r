@@ -103,8 +103,9 @@ add_to_securities <- function(securities, parameters, allow_to_buy) {
   predict <- exp(1) ** predict
   sell_point <- exp(1) ** sell_point
   buy_point <- exp(1) ** buy_point
+  value <- parameters$value
   append(securities, list(list(id=name, last_data_date=last_data_date, predict=predict, sell_point=sell_point, 
-    buy_point=buy_point, stop_loss=0.5, allow_to_buy=allow_to_buy)))
+    buy_point=buy_point, stop_loss=0.5, allow_to_buy=allow_to_buy, value=value)))
 }
                              
 #high_weight <- c('AAPL', 'MSFT', 'AMZN', 'TSLA', 'UNH', 'GOOGL', 'XOM', 'JNJ', 'GOOG', 'JPM', 'NVDA', 'CVX', 'V', 'PG', 'HD', 'LLY', 'MA', 'PFE', 'ABBV', 'BAC', 'MRK', 'PEP', 'KO', 'COST', 'META', 'MCD', 'WMT', 'TMO', 'CSCO', 'DIS', 'AVGO', 'WFC', 'COP', 'ABT', 'BMY', 'ACN', 'DHR', 'VZ', 'NEE', 'LIN', 'CRM', 'TXN', 'AMGN', 'RTX', 'HON', 'PM', 'ADBE', 'CMCSA', 'T')
@@ -169,11 +170,7 @@ for (i in seq_along(candidates)) {
 }
 
 securities_to_sell <- get_ids_past_days(n_days_back)
-print('111')
-print(securities_to_sell)
 securities_to_sell <- securities_to_sell[!securities_to_sell %in% candidates]
-print('222')
-print(securities_to_sell)
 securities_to_sell_index <- match(securities_to_sell, stock_names)
 
 # stocks to sell

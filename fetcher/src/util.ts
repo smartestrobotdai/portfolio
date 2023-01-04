@@ -88,3 +88,24 @@ export const post = (path: string, hostname: string, reqBody: any): Promise<stri
       })
     })
   }
+
+
+export function *splitArrays(arr:any[], maxNumber:number) {
+    for (let pos = 0; pos < arr.length; pos += maxNumber) {
+      yield arr.slice(pos, pos + maxNumber)
+    }
+  }
+
+export async function handleBatch(stockChunkIt: Iterator<any[]>, fetchFunc: any, extractFunc: any, saveFunc: any): Promise<any> {
+    const {value, done} = stockChunkIt.next()
+    if (done) {return Promise.resolve()}
+    console.log('Downloading data for ', value)
+    return Promise.all(value.map(fetchFunc)).then(results => {
+      return results.map(extractFunc)
+    }).then((results:any) => {
+      console.log('Saving Data')
+      results.map((result: any, idx: number) => saveFunc(value[idx], result))
+      return Promise.resolve()
+    }).catch(e => {console.log(e)}).then(() => handleBatch(stockChunkIt, fetchFunc, extractFunc, saveFunc))
+  }
+  

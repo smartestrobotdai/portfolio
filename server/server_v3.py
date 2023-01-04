@@ -16,6 +16,8 @@ import websockets
 import pandas as pd
 import numpy as np
 import logging
+import signal
+import sys
 
 security_state = []
 model_dir = '../models/model3'
@@ -30,6 +32,17 @@ ticks=[]
 client_websockets = []
 df_state_last_update_time = datetime.datetime.now()
 df_state_last_print_time = datetime.datetime.now()
+
+def signal_handler(sig, frame):
+  sig_name = signal.Signals(sig)
+  if sig == signal.SIGTERM or sig == signal.SIGINT:
+    logging.info(f'SigKill {sig_name} received, exiting')
+    sys.exit(0)
+  else:
+    logging.info(f'Signal {sig_name} received')
+
+
+
 
 
 def get_last_workday_nyse(timestamp=None):
@@ -57,7 +70,7 @@ def get_valid_securities_to_buy():
   timestamp = datetime.datetime.now(NYT)
   last_b_date = get_last_workday_nyse(timestamp)
   today_date = get_today_nyse(timestamp)
-  securities = [{**s, "allow_to_buy": True} for s in securities if validate_date(s['last_data_date'], last_b_date, today_date)]
+  securities = [s for s in securities if validate_date(s['last_data_date'], last_b_date, today_date)]
   return securities
 
 def readSecuritiesFromFile(file_name):
@@ -85,6 +98,8 @@ async def send_msg_to_all(id, point, price, operation, stop_loss=None):
       continue
   for websocket in websockets_to_remove:
     client_websockets.remove(websocket)
+    n_clients = len(client_websockets)
+    logging.info(f'{n_clients} connected.')
 
 
 
@@ -135,7 +150,8 @@ async def check_msg(data):
   sell_point = states['sell_point']
   stop_loss = states['stop_loss']
   price = data['price']
-  allow_to_buy = data['allow_to_buy']
+  allow_to_buy = states['allow_to_buy']
+  #print(f'stock: {id}, allow_to_buy={allow_to_buy}')
   
   if price < buy_point and allow_to_buy:
     update_state(id, 'buy', price)
@@ -165,6 +181,8 @@ def validate_model_date():
 
 async def echo(websocket):
   client_websockets.append(websocket)
+  n_clients = len(client_websockets)
+  logging.info(f'{n_clients} connected.')
   async for message in websocket:
     await websocket.send(message)
 
@@ -211,4 +229,7 @@ async def main():
   asyncio.ensure_future(init_client())
   await init_server()
 
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 asyncio.run(main())
