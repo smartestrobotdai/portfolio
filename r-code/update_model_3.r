@@ -40,7 +40,19 @@ ewmsd2 <- function(x, alpha) {
 
 helper <- function(all, name) {
   #df <- data_prep(name, to_sek=FALSE) %>% select(no_model_profit)
-  df <- data_prep(name, end_date=NULL, to_sek=FALSE, reload=TRUE) %>% mutate(mean_diff=c(0, diff(mean))) %>% select(mean_diff, no_model_profit)
+  failed = FALSE
+  error_func <- function(e) {
+    print(e)
+    failed <<- TRUE
+    return(NA)
+  }
+
+  df <- tryCatch(data_prep(name, end_date=NULL, to_sek=FALSE, reload=TRUE), error=error_func)
+  if (failed) {
+    return(all)
+  }
+  
+  df <- df %>% mutate(mean_diff=c(0, diff(mean))) %>% select(mean_diff, no_model_profit)
   n = 20
   alpha = 2/(n+1)
   df$movavg = ewma(df$mean_diff, alpha)
