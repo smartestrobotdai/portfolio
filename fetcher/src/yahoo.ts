@@ -51,8 +51,8 @@ export function saveData(stockName: string, result:any) {
 function getCurDate() {
   let ts = Date.now();
   let date_ob = new Date(ts);
-  let date = date_ob.getDate();
-  let month = date_ob.getMonth() + 1;
+  let date = String(date_ob.getDate()).padStart(2,0)
+  let month = String(date_ob.getMonth() + 1).padStart(2,0)
   let year = date_ob.getFullYear();
   return `${year}${month}${date}`
 }
