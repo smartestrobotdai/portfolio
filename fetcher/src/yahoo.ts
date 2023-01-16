@@ -51,8 +51,8 @@ export function saveData(stockName: string, result:any) {
 function getCurDate() {
   let ts = Date.now();
   let date_ob = new Date(ts);
-  let date = String(date_ob.getDate()).padStart(2,0)
-  let month = String(date_ob.getMonth() + 1).padStart(2,0)
+  let date = String(date_ob.getDate()).padStart(2, '0')
+  let month = String(date_ob.getMonth() + 1).padStart(2, '0')
   let year = date_ob.getFullYear();
   return `${year}${month}${date}`
 }
@@ -98,7 +98,7 @@ export const fetchData = (name: string) => {
 }
 
 export const fetchMinuteData = (name: string) => {
-  const path = `/v8/finance/chart/${name}?region=US&lang=en-US&includePrePost=false&interval=1m&useYfid=true&range=5d&corsDomain=finance.yahoo.com&.tsrc=finance`
+  const path = `/v8/finance/chart/${name}?region=US&lang=en-US&includePrePost=false&interval=1m&useYfid=true&range=7d&corsDomain=finance.yahoo.com&.tsrc=finance`
   return fetch(path, 'query1.finance.yahoo.com')
 }
 
