@@ -5,6 +5,7 @@ library(data.table)
 library(stringr)
 library(TTR)
 library(stringi)
+library(numDeriv)
 
 COURTAGE=0.00089
 

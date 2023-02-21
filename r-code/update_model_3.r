@@ -4,11 +4,15 @@ library(purrr)
 source('util.r')
 dir <- '../models/model3'
 
-n_days_back <- 10
+n_days_back <- 30
 n_candidates <- 1
 
-stock_names <- unlist(lapply(list.files('./data'), function(x) gsub(".rds", "", x)))
+#stock_names <- unlist(lapply(list.files('./data'), function(x) gsub(".rds", "", x)))
+results <- readRDS(file="new_parameters_results_name.rds")
+df <- data.frame(do.call(rbind,results))
+stock_names <- df$name
 
+print(str_glue('stock_names length: {length(stock_names)}'))
 
 ewma <- function (x, alpha) {
   c(stats::filter(x * alpha, 1 - alpha, "recursive", init = x[1]))
@@ -55,8 +59,8 @@ helper <- function(all, name) {
   df <- df %>% mutate(mean_diff=c(0, diff(mean))) %>% select(mean_diff, no_model_profit)
   n = 20
   alpha = 2/(n+1)
-  df$movavg = ewma(df$mean_diff, alpha)
-  df$movsd = ewmsd2(df$mean_diff, alpha)
+  df$movavg = ewma(exp(1)**df$mean_diff, alpha) - 1
+  df$movsd = ewmsd2(exp(1)**df$mean_diff, alpha)
   df <- df %>% filter(!is.na(movavg)) %>% filter(!is.na(movsd)) %>% mutate(mov_mu_sd_ratio=movavg/movsd)
   df <- df %>% mutate(diff_mov_mu_sd_ratio=c(0, diff(mov_mu_sd_ratio)))
   colnames(df) <- paste(name, colnames(df), sep='.')
@@ -122,6 +126,11 @@ add_to_securities <- function(securities, parameters, allow_to_buy) {
                              
 #high_weight <- c('AAPL', 'MSFT', 'AMZN', 'TSLA', 'UNH', 'GOOGL', 'XOM', 'JNJ', 'GOOG', 'JPM', 'NVDA', 'CVX', 'V', 'PG', 'HD', 'LLY', 'MA', 'PFE', 'ABBV', 'BAC', 'MRK', 'PEP', 'KO', 'COST', 'META', 'MCD', 'WMT', 'TMO', 'CSCO', 'DIS', 'AVGO', 'WFC', 'COP', 'ABT', 'BMY', 'ACN', 'DHR', 'VZ', 'NEE', 'LIN', 'CRM', 'TXN', 'AMGN', 'RTX', 'HON', 'PM', 'ADBE', 'CMCSA', 'T')
 #stock_names <- high_weight
+if (!file.exists('./cache')) {
+  print('Creating folder: ./cache')
+  dir.create('./cache')
+}
+
 cur_date <- as.Date(Sys.time())
 cache_file <- str_glue('cache/update_model_3_cache-{cur_date}.csv')
 if (!file.exists(cache_file)) {
@@ -150,41 +159,36 @@ print(str_glue('mean no_model: {mean_no_model}'))
 
 
 candidate_index <- match(candidates, stock_names)
-results <- readRDS(file="new_parameters_results_name.rds")
+
+
+
+
 values <- sapply(results[candidate_index], function(x) x$value)
-print('second screen, the profit > 0')
+print('second screen, the profit > 0, profits:')
+print(values)
 cond <- values < 0
 candidates <- candidates[cond]
 candidate_index <- candidate_index[cond]
+print('candidates with profit > 0:')
 print(candidates)
-candidates <- candidates[1:n_candidates]
-candidate_index <- candidate_index[1:n_candidates]
-
-
 len <- length(candidates)
-if (!len) {
-  print('no candidate found, quit...')
-  return(0)
-}
-
-# one with highest profit, another with lowest movavg
-# if (len > max_n_stocks) {
-#   candidates <- candidates[1:max_n_stocks]
-#   candidate_index <- candidate_index[1:max_n_stocks]
-# }
-
-
-# stocks to buy
 securities <- list()
-for (i in seq_along(candidates)) {
-  idx <- candidate_index[i]
-  securities <- add_to_securities(securities, results[[idx]], TRUE)
+if (len>0) {
+  candidates <- candidates[1:n_candidates]
+  candidate_index <- candidate_index[1:n_candidates]
+  # stocks to buy
+  for (i in seq_along(candidates)) {
+    idx <- candidate_index[i]
+    securities <- add_to_securities(securities, results[[idx]], TRUE)
+  }
 }
+
 
 securities_to_sell <- get_ids_past_days(n_days_back)
 securities_to_sell <- securities_to_sell[!securities_to_sell %in% candidates]
+print("securities_to_sell:")
+print(securities_to_sell)
 securities_to_sell_index <- match(securities_to_sell, stock_names)
-
 # stocks to sell
 for (i in seq_along(securities_to_sell)) {
   idx <- securities_to_sell_index[i]
